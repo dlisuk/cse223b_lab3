@@ -2,14 +2,66 @@ package triblab
 
 import (
 	"trib"
+	"net/rpc"
 )
 
 // Creates an RPC client that connects to addr.
 func NewClient(addr string) trib.Storage {
-	panic("todo")
+	connection, err := rpc.DialHTTP("tcp",addr)
+	if err != nil{
+		panic("Error connecting to rpc server")
+	}
+
+	return client{connection}
 }
 
 // Serve as a backend based on the given configuration
 func ServeBack(b *trib.BackConfig) error {
-	panic("todo")
+	rpc.DefaultServer()
+}
+
+type client struct{
+	connection rpc.Client
+}
+
+
+
+func (self *client) Get(key string, value *string) error{
+	err := self.connection.Call("Lab1.Get",key,value)
+	return err
+}
+
+func (self *client) Set(kv *KeyValue, succ *bool) error{
+	err := self.connection.Call("Lab1.Set",kv,succ)
+	return err
+}
+
+func (self *client) Keys(p *Pattern, list *List) error{
+	err := self.connection.Call("Lab1.Keys",p,list)
+	return err
+}
+
+func (self *client) ListGet(key string, list *List) error{
+	err := self.connection.Call("Lab1.ListGet",key,list)
+	return err
+}
+
+func (self *client) ListAppend(kv *KeyValue, succ *bool) error{
+	err := self.connection.Call("Lab1.ListAppend",kv,succ)
+	return err
+}
+
+func (self *client) ListRemove(kv *KeyValue, n *int) error{
+	err := self.connection.Call("Lab1.ListRemove",kv,n)
+	return err
+}
+
+func (self *client) ListKeys(p *Pattern, list *List) error{
+	err := self.connection.Call("Lab1.ListKeys",p,list)
+	return err
+}
+
+func (self *client) Clock(atLeast uint64, ret *uint64) error{
+	err := self.connection.Call("Lab1.Clock",atLeast,ret)
+	return err
 }
