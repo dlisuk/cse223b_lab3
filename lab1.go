@@ -3,6 +3,7 @@ package triblab
 import (
 	"trib"
 	"net/rpc"
+	"net/http"
 )
 
 // Creates an RPC client that connects to addr.
@@ -17,7 +18,10 @@ func NewClient(addr string) trib.Storage {
 
 // Serve as a backend based on the given configuration
 func ServeBack(b *trib.BackConfig) error {
-	rpc.DefaultServer()
+	rpc.RegisterName("Lab1", b.Store)
+	rpc.HandleHTTP()
+	err := http.ListenAndServe(b.Addr, nil)
+	return err
 }
 
 type client struct{
