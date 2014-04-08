@@ -24,7 +24,12 @@ func ServeBack(b *trib.BackConfig) error {
 	if err != nil{
 		return err
 	}
-	b.Ready <- true
+	select{
+	case b.Ready <- true:
+		nil
+	default:
+		nil
+	}
 	for {
 		connection, err  := listener.Accept()
 		if err != nil{
