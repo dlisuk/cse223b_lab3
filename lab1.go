@@ -26,9 +26,7 @@ func ServeBack(b *trib.BackConfig) error {
 	}
 	select{
 	case b.Ready <- true:
-		nil
 	default:
-		nil
 	}
 	for {
 		connection, err  := listener.Accept()
