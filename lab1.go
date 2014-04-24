@@ -4,80 +4,136 @@ import (
 	"trib"
 	"net/rpc"
 	"net"
+	"net/http"
 )
 
 // Creates an RPC client that connects to addr.
 func NewClient(addr string) trib.Storage {
-	connection, err := rpc.Dial("tcp",addr)
-	if err != nil{
-		panic("Error connecting to rpc server")
-	}
-
-	return &client{connection}
+	return &client{addr, nil, true}
 }
 
 // Serve as a backend based on the given configuration
 func ServeBack(b *trib.BackConfig) error {
 	s := rpc.NewServer()
-	s.RegisterName("Lab1", b.Store)
+	s.RegisterName("Storage", b.Store)
 	listener, err := net.Listen("tcp",b.Addr)
+
 	if err != nil{
+		if b.Ready != nil { go func(ch chan<- bool) { ch <- false } (b.Ready) }
 		return err
 	}
-	select{
-	case b.Ready <- true:
-	default:
-	}
-	for {
-		connection, err  := listener.Accept()
-		if err != nil{
-			return err
-		}
-		s.ServeConn(connection)
-	}
-	return nil
+
+	if b.Ready != nil { go func(ch chan<- bool ) { ch <- true } (b.Ready) }
+	return http.Serve(listener, s)
 }
 
 type client struct{
+	addr string
 	connection *rpc.Client
+	shutdown bool
 }
 
+func (self *client) getConnection() (*rpc.Client, error) {
+	c := self.connection
+	var err error = nil
+	if c == nil {
+		c, err = rpc.DialHTTP("tcp", self.addr)
+		self.connection = c
+		if err != nil {
+			return nil, err
+		}
+	}
+	return c, nil
+}
+
+
 func (self *client) Get(key string, value *string) error{
-	err := self.connection.Call("Lab1.Get",key,value)
+	c, err := self.getConnection()
+	if err == nil {
+		err = c.Call("Storage.Get",key,value)
+	}
+	if err != nil && err == rpc.ErrShutdown{
+		self.connection = nil
+	}
 	return err
 }
 
 func (self *client) Set(kv *trib.KeyValue, succ *bool) error{
-	err := self.connection.Call("Lab1.Set",kv,succ)
+	c, err := self.getConnection()
+	if err == nil {
+		err = c.Call("Storage.Set",kv,succ)
+	}
+	if err != nil && err == rpc.ErrShutdown{
+		self.connection = nil
+	}
 	return err
 }
 
 func (self *client) Keys(p *trib.Pattern, list *trib.List) error{
-	err := self.connection.Call("Lab1.Keys",p,list)
+	c, err := self.getConnection()
+	list.L = make([]string,0)
+	if err == nil {
+		err = c.Call("Storage.Keys",p,list)
+	}
+	if err != nil && err == rpc.ErrShutdown{
+		self.connection = nil
+	}
 	return err
 }
 
 func (self *client) ListGet(key string, list *trib.List) error{
-	err := self.connection.Call("Lab1.ListGet",key,list)
+	c, err := self.getConnection()
+	list.L = make([]string,0)
+	if err == nil {
+		err = c.Call("Storage.ListGet",key,list)
+	}
+	if err != nil && err == rpc.ErrShutdown{
+		self.connection = nil
+	}
 	return err
 }
 
 func (self *client) ListAppend(kv *trib.KeyValue, succ *bool) error{
-	err := self.connection.Call("Lab1.ListAppend",kv,succ)
+	c, err := self.getConnection()
+	if err == nil {
+		err = c.Call("Storage.ListAppend",kv,succ)
+	}
+	if err != nil && err == rpc.ErrShutdown{
+		self.connection = nil
+	}
 	return err
 }
 
 func (self *client) ListRemove(kv *trib.KeyValue, n *int) error{
-	err := self.connection.Call("Lab1.ListRemove",kv,n)
+	c, err := self.getConnection()
+	if err == nil {
+		err = c.Call("Storage.ListRemove",kv,n)
+	}
+	if err != nil && err == rpc.ErrShutdown{
+		self.connection = nil
+	}
 	return err
 }
 
 func (self *client) ListKeys(p *trib.Pattern, list *trib.List) error{
-	err := self.connection.Call("Lab1.ListKeys",p,list)
+	c, err := self.getConnection()
+	list.L = make([]string,0)
+	if err == nil {
+		err = c.Call("Storage.ListKeys",p,list)
+	}
+	if err != nil && err == rpc.ErrShutdown{
+		self.connection = nil
+	}
 	return err
 }
 
 func (self *client) Clock(atLeast uint64, ret *uint64) error{
-	err := self.connection.Call("Lab1.Clock",atLeast,ret)
+	c, err := self.getConnection()
+	if err == nil {
+		err = c.Call("Storage.ListAppend",atLeast,ret)
+	}
+	if err != nil && err == rpc.ErrShutdown{
+		self.connection = nil
+	}
 	return err
 }

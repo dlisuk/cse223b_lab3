@@ -40,7 +40,7 @@ func TestBinStorage(t *testing.T) {
 	)
 
 	done := make(chan bool, 10)
-	
+
 	for i := 0; i < 10; i++ {
 		c := bc.Bin(fmt.Sprintf("b%d", i))
 		go func(s trib.Storage) {
