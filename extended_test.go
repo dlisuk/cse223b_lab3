@@ -65,7 +65,6 @@ func MyCheckServer(t *testing.T, server trib.Server, client trib.BinStorage) {
 	users, e := server.ListUsers()
 	ne(e)
 
-	print(len(users))
 	as(len(users) >= 20)
 	sort.Strings(users)
 	users2, e := server.ListUsers()
@@ -146,8 +145,6 @@ func MyCheckServer(t *testing.T, server trib.Server, client trib.BinStorage) {
 	ne(e)
 	as(len(tribs) == trib.MaxTribFetch)
 	tr := tribs[0]
-	println("Trib 0:"+tr.Message+"\n")
-	println("Trib 1:"+tribs[1].Message+"\n")
 	if tr.Clock > clk {
 		clk = tr.Clock
 	}
@@ -159,5 +156,4 @@ func MyCheckServer(t *testing.T, server trib.Server, client trib.BinStorage) {
 	for _,t := range tribs{
 		fmt.Printf("%v %v %v %v\n",t.Clock,t.Time,t.User,t.Message)
 	}
-	t.Fatal()
 }
