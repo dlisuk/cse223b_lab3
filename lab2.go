@@ -76,7 +76,10 @@ func (self *front) ListUsers() ([]string, error){
 // Post a tribble.  The clock is the maximum clock value this user has
 // seen so far by reading tribbles or clock sync.
 func (self *front) Post(who, post string, clock uint64) error{
-	//First we have to ensure the poster is a real user
+	//We have to check that post is short enough
+	if len(post) > trib.MaxTribLen { return errors.New("Trib '" + post + "' is too long") }
+
+	//We have to ensure the poster is a real user
 	exists, err := self.isUser(who)
 	if err != nil { return err }
 	if !exists    { return errors.New("User '" + who + "' does not exist and thus cannot post-" + post) }
@@ -198,6 +201,8 @@ func (self *front) Home(user string) ([]*trib.Trib, error){
 	if err != nil  { return nil, err}
 	if !exists     { return nil, errors.New("User '" + user + "' does not exist") }
 	followees, err := self.Following(user)
+	//User should appear on own home
+	followees = append(followees,user)
 	outList := make([]*trib.Trib,0,trib.MaxFollowing*trib.MaxTribFetch)
 	for i := range followees{
 		tribs,err := self.Tribs(followees[i])
