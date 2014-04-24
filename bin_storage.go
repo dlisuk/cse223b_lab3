@@ -26,11 +26,11 @@ func NewBinClient(backs []string) trib.BinStorage {
 	backends := make([]backend,0,len(backs))
 	for i := range backs {
 		addr := backs[i]
-		print(addr)
-		print("-")
+		/*print(addr)
+		print("-")*/
 		hash := hashBinKey(addr)
-		print(hash)
-		print("\n")
+		/*print(hash)
+		print("\n")*/
 
 		store := NewClient(addr)
 
@@ -45,17 +45,17 @@ type binClient struct{
 }
 
 func (self *binClient) Bin(name string) trib.Storage{
-	print(name)
+	//print(name)
 	hash := hashBinKey(name)
-	print(":")
-	print(hash)
-	print(":")
+	//print(":")
+	//print(hash)
+	//print(":")
 	ind := sort.Search(len(self.backs), func(i int) bool{ return self.backs[i].hash >= hash})
 	if ind == -1 || ind == len(self.backs) {
 		ind = 0
 	}
-	print(self.backs[ind].addr)
-	print("\n")
+	//print(self.backs[ind].addr)
+	//print("\n")
 	return NewProxy(name,self.backs[ind].store)
 }
 

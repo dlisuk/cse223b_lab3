@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"math/rand"
+	//"fmt"
 )
 
 //See keeper.go for ServeKeeper function
@@ -22,11 +23,12 @@ const (
 )
 
 func NewFront(s trib.BinStorage) trib.Server {
-	return &front{ s }
+	return &front{ s, nil }
 }
 
 type front struct{
 	bin         trib.BinStorage
+	userCache   []string
 }
 
 func (self *front) isUser(user string) (bool, error) {
@@ -62,18 +64,24 @@ func (self *front) SignUp(user string) error {
 // of at lest 20 of them needs to be listed.
 // The result should be sorted in alphabetical order
 func (self *front) ListUsers() ([]string, error){
+	//If we've cached the users we can just return it
+	if self.userCache != nil{
+		return self.userCache, nil
+	}
 	var users trib.List
 	userbin := self.bin.Bin(usersBin)
 	err := userbin.Keys(&trib.Pattern{"",""}, &users)
 
 	if err != nil{ return nil, err }
 	var userList []string
-	if len(users.L) > 20{
-		userList = users.L[0:20]
+	if len(users.L) > trib.MinListUser{
+		userList = users.L[0:trib.MinListUser]
+		sort.Strings(userList)
+		self.userCache = userList
 	}else{
 		userList = users.L
+		sort.Strings(userList)
 	}
-	sort.Strings(userList)
 	return userList, nil
 }
 
@@ -88,12 +96,21 @@ func (self *front) Post(who, post string, clock uint64) error{
 	if err != nil { return err }
 	if !exists    { return errors.New("User '" + who + "' does not exist and thus cannot post-" + post) }
 
-	//Now we make the tribble and convert to a string
-	t          := trib.Trib{who, post, time.Now(), clock}
-	tribString := self.tribToString(&t)
-
-	//Get the users's bin and add the tribble string to their list of tribbles
+	//Get the user's bin
 	userStore := self.bin.Bin(who)
+
+	//We have to sync the clock
+	var newClock uint64
+	userStore.Clock(clock, &newClock)
+
+	//Now we make the tribble and convert to a string
+	t          := trib.Trib{who, post, time.Now(), newClock}
+	tribString := self.tribToString(&t)
+	if rand.Float64() <= 1.0/float64(2*trib.MaxTribFetch){
+		go self.cleanTrash(who)
+	}
+
+	//Add the tribble string to their list of tribbles
 	var succ bool
 	err = userStore.ListAppend(trib.KV(tribsKey, tribString), &succ)
 	if err != nil { return err }
@@ -111,6 +128,7 @@ func (self *front) Tribs(user string) ([]*trib.Trib, error){
 	//Get the users's bin and get their list of tribbles
 	return self.tribs(user)
 }
+
 // Helper function to return tribs without all the checks
 func (self *front) tribs(user string) ([]*trib.Trib, error) {
 	userStore := self.bin.Bin(user)
@@ -123,7 +141,7 @@ func (self *front) tribs(user string) ([]*trib.Trib, error) {
 		if err != nil { return nil, err }
 		outList = append(outList, trib)
 	}
-	if len(outList) >= 1.5*trib.MaxTribFetch && rand.Float64() > 0.75{
+	if (len(outList) > (1.5*trib.MaxTribFetch) && rand.Float64() > 0.75) || len(outList) >= (2*trib.MaxTribFetch){
 		go self.cleanTrash(user)
 	}
 
@@ -224,23 +242,24 @@ func (self *front) following(who string) ([]string, error) {
 			followers = append(followers,whom)
 		}
 	}
+	sort.Strings(followers)
 	return followers, nil
 }
 
 
 // List the trib of someone's following users
-func (self *front) Home(user string) ([]*trib.Trib, error){
+func (self *front) Home(user string) ([]*trib.Trib, error) {
 	exists, err := self.isUser(user)
-	if err != nil  { return nil, err}
-	if !exists     { return nil, errors.New("User '" + user + "' does not exist") }
+	if err != nil { return nil, err}
+	if !exists { return nil, errors.New("User '"+user+"' does not exist") }
 	followees, err := self.following(user)
 	//User should appear on own home
-	followees = append(followees,user)
-	outList := make([]*trib.Trib,0,trib.MaxFollowing*trib.MaxTribFetch)
-	for i := range followees{
-		tribs,err := self.Tribs(followees[i])
-		if err != nil  { return nil, err}
-		for j := range tribs{
+	followees = append(followees, user)
+	outList := make([]*trib.Trib, 0, trib.MaxFollowing*trib.MaxTribFetch)
+	for i := range followees {
+		tribs, err := self.Tribs(followees[i])
+		if err != nil { return nil, err}
+		for j := range tribs {
 			outList = append(outList, tribs[j])
 		}
 	}
@@ -254,6 +273,7 @@ func (self *front) cleanTrash(user string){
 	var rawList trib.List
 	err := userStore.ListGet(tribsKey, &rawList)
 	if err != nil { return }
+	if len(rawList.L) <= 1.2*trib.MaxTribFetch{ return }
 	outList := make([]*trib.Trib,0,len(rawList.L))
 	for i := range rawList.L{
 		trib, err := self.stringToTrib(rawList.L[i])
@@ -271,7 +291,6 @@ func (self *front) cleanTrash(user string){
 		userStore.ListRemove(trib.KV(tribsKey,tString),&nLocal)
 		n = n+nLocal
 	}
-	print("Cleaned " + strconv.FormatInt(int64(n),10) + " tribs by " + user + "\n")
 }
 
 func (self *front) tribToString(t *trib.Trib) string{
