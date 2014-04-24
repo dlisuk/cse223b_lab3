@@ -4,12 +4,12 @@ import (
 	"trib"
 	"hash/fnv"
 	//"encoding/base64"
-	"strconv"
+	//"strconv"
 	"sort"
 )
 
-func hashBinKey(word string) string{
-	hasher := fnv.New32a()
+func hashBinKey(word string) uint64{
+	hasher := fnv.New64a()
 	hasher.Write([]byte("Jq0r6pLVtsXPNkVoliqAyvdZprpwtzPvgQk7WVmX"))
 	word2 := "SQA4ZC8m6DhmWhhPhKyN" + word
 	chars := make([]byte,3,3)
@@ -20,7 +20,7 @@ func hashBinKey(word string) string{
 		chars[1] = chars[1] + chars[0] + chars[2]
 		hasher.Write(chars)
 	}
-	return strconv.FormatInt(int64(hasher.Sum32()) % 1000000,10)
+	return hasher.Sum64()%100000
 }
 func NewBinClient(backs []string) trib.BinStorage {
 	backends := make([]backend,0,len(backs))
@@ -61,7 +61,7 @@ func (self *binClient) Bin(name string) trib.Storage{
 
 type backend struct{
 	addr  string
-	hash  string
+	hash  uint64
 	store trib.Storage
 }
 

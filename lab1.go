@@ -5,6 +5,7 @@ import (
 	"net/rpc"
 	"net"
 	"net/http"
+	"strings"
 )
 
 // Creates an RPC client that connects to addr.
@@ -39,6 +40,9 @@ func (self *client) getConnection() (*rpc.Client, error) {
 	if c == nil {
 		c, err = rpc.DialHTTP("tcp", self.addr)
 		self.connection = c
+		if err != nil && strings.Contains(err.Error(), "connection refused") {
+			return nil, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -49,7 +53,7 @@ func (self *client) getConnection() (*rpc.Client, error) {
 
 func (self *client) Get(key string, value *string) error{
 	c, err := self.getConnection()
-	if err == nil {
+	if c != nil {
 		err = c.Call("Storage.Get",key,value)
 	}
 	if err != nil && err == rpc.ErrShutdown{
@@ -60,7 +64,7 @@ func (self *client) Get(key string, value *string) error{
 
 func (self *client) Set(kv *trib.KeyValue, succ *bool) error{
 	c, err := self.getConnection()
-	if err == nil {
+	if c != nil {
 		err = c.Call("Storage.Set",kv,succ)
 	}
 	if err != nil && err == rpc.ErrShutdown{
@@ -72,7 +76,7 @@ func (self *client) Set(kv *trib.KeyValue, succ *bool) error{
 func (self *client) Keys(p *trib.Pattern, list *trib.List) error{
 	c, err := self.getConnection()
 	list.L = make([]string,0)
-	if err == nil {
+	if c != nil {
 		err = c.Call("Storage.Keys",p,list)
 	}
 	if err != nil && err == rpc.ErrShutdown{
@@ -84,7 +88,7 @@ func (self *client) Keys(p *trib.Pattern, list *trib.List) error{
 func (self *client) ListGet(key string, list *trib.List) error{
 	c, err := self.getConnection()
 	list.L = make([]string,0)
-	if err == nil {
+	if c != nil {
 		err = c.Call("Storage.ListGet",key,list)
 	}
 	if err != nil && err == rpc.ErrShutdown{
@@ -95,7 +99,7 @@ func (self *client) ListGet(key string, list *trib.List) error{
 
 func (self *client) ListAppend(kv *trib.KeyValue, succ *bool) error{
 	c, err := self.getConnection()
-	if err == nil {
+	if c != nil {
 		err = c.Call("Storage.ListAppend",kv,succ)
 	}
 	if err != nil && err == rpc.ErrShutdown{
@@ -106,7 +110,7 @@ func (self *client) ListAppend(kv *trib.KeyValue, succ *bool) error{
 
 func (self *client) ListRemove(kv *trib.KeyValue, n *int) error{
 	c, err := self.getConnection()
-	if err == nil {
+	if c != nil {
 		err = c.Call("Storage.ListRemove",kv,n)
 	}
 	if err != nil && err == rpc.ErrShutdown{
@@ -118,7 +122,7 @@ func (self *client) ListRemove(kv *trib.KeyValue, n *int) error{
 func (self *client) ListKeys(p *trib.Pattern, list *trib.List) error{
 	c, err := self.getConnection()
 	list.L = make([]string,0)
-	if err == nil {
+	if c != nil {
 		err = c.Call("Storage.ListKeys",p,list)
 	}
 	if err != nil && err == rpc.ErrShutdown{
@@ -129,8 +133,8 @@ func (self *client) ListKeys(p *trib.Pattern, list *trib.List) error{
 
 func (self *client) Clock(atLeast uint64, ret *uint64) error{
 	c, err := self.getConnection()
-	if err == nil {
-		err = c.Call("Storage.ListAppend",atLeast,ret)
+	if c != nil {
+		err = c.Call("Storage.Clock",atLeast,ret)
 	}
 	if err != nil && err == rpc.ErrShutdown{
 		self.connection = nil

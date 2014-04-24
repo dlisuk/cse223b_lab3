@@ -88,5 +88,5 @@ func (self *proxy) ListKeys(p *trib.Pattern, list *trib.List) error{
 }
 
 func (self *proxy) Clock(atLeast uint64, ret *uint64) error{
-	return self.Clock(atLeast,ret)
+	return self.store.Clock(atLeast,ret)
 }

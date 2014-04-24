@@ -3,12 +3,13 @@ package triblab
 import (
 	"trib"
 	"time"
+	"net/rpc"
 )
 
 func ServeKeeper(kc *trib.KeeperConfig) error {
 	backs :=  make([]trib.Storage, 0, len(kc.Backs))
 	for i := range kc.Backs{
-		backs[i] = NewClient(kc.Backs[i])
+		backs = append(backs,NewClient(kc.Backs[i]))
 	}
 	if kc.Ready != nil { go func(ch chan<- bool) { ch <- true } (kc.Ready) }
 	var highest uint64
@@ -24,7 +25,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 					go func(back trib.Storage) {
 						var ret uint64
 						err := back.Clock(highest, &ret)
-						if err != nil {
+						if err != nil && err != rpc.ErrShutdown{
 							errChan <- err
 						}
 						seenClocks <- ret
@@ -37,7 +38,11 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 						maxClock = nextClock
 					}
 				}
-				highest = maxClock
+				if maxClock > highest{
+					highest = maxClock
+				}else{
+					highest = highest + 1
+				}
 			}()
 		}
 	}(ticker.C)
