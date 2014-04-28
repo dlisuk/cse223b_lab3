@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"math/rand"
-	//"fmt"
 )
 
 //See keeper.go for ServeKeeper function
@@ -267,7 +266,6 @@ func (self *front) Home(user string) ([]*trib.Trib, error) {
 	if len(outList) > trib.MaxTribFetch { outList = outList[(len(outList)-trib.MaxTribFetch):len(outList)] }
 	return outList, nil
 }
-<<<<<<< HEAD
 
 func (self *front) cleanTrash(user string){
 	userStore := self.bin.Bin(user)

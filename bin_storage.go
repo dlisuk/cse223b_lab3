@@ -3,8 +3,6 @@ package triblab
 import (
 	"trib"
 	"hash/fnv"
-	//"encoding/base64"
-	//"strconv"
 	"sort"
 )
 
@@ -22,6 +20,7 @@ func hashBinKey(word string) uint64{
 	}
 	return hasher.Sum64()%100000
 }
+
 func NewBinClient(backs []string) trib.BinStorage {
 	backends := make([]backend,0,len(backs))
 	for i := range backs {
