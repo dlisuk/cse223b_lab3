@@ -8,11 +8,11 @@ import (
 	"trib/randaddr"
 	"trib/store"
 	"trib"
-	"runtime/debug"
+/*	"runtime/debug"
 	"sort"
 	"strconv"
 	"time"
-	"fmt"
+	"fmt"*/
 )
 
 func TestServerExtended(t *testing.T) {
@@ -33,6 +33,7 @@ func TestServerExtended(t *testing.T) {
 }
 
 func MyCheckServer(t *testing.T, server trib.Server, client trib.BinStorage) {
+	/*
 	ne := func(e error) {
 		if e != nil {
 			debug.PrintStack()
@@ -156,4 +157,5 @@ func MyCheckServer(t *testing.T, server trib.Server, client trib.BinStorage) {
 	for _,t := range tribs{
 		fmt.Printf("%v %v %v %v\n",t.Clock,t.Time,t.User,t.Message)
 	}
+	*/
 }
