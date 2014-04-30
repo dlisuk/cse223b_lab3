@@ -1,11 +1,12 @@
 package triblab
 
 import(
-"trib"
-"fmt"
-"errors"
-"strings"
-"trib/colon"
+	"trib"
+	"fmt"
+	"errors"
+	"strings"
+	"trib/colon"
+	"time"
 )
 
 func NewLoggingStorage( store trib.Storage) trib.Storage{
@@ -16,14 +17,30 @@ type loggingStorage struct{
 	store trib.Storage
 }
 
-func (self *loggingStorage) issue(cmd string, kv *trib.KeyValue) error{
+func (self *loggingStorage) issue(cmd string, kv *trib.KeyValue, finalSucc *bool) error{
+	finalSucc = false
+	var succ bool
 	var clk uint64
 	self.store.Clock(uint64(0),&clk)
 	issueString := MakeCmd(clk, cmd, kv)
 	issueKV     := trib.KV(LogKey,issueString)
-	var succ bool
-	self.store.ListAppend(issueKV, &succ)
+	err         := self.store.ListAppend(issueKV, &succ)
+	if err != nil { return err }
+	if !succ      { return errors.New("Failed to append to log") }
 
+	var res trib.List
+	for succ == false {
+		err := self.store.ListGet(LogKey,&res)
+		if err != nil { return err }
+		succ = true
+		for _,v := range res.L{
+			if v == issueString{
+				succ = false
+			}
+		}
+		time.Sleep(250)
+	}
+	finalSucc = true
 	return nil
 }
 
@@ -32,8 +49,7 @@ func (self *loggingStorage) Get(key string, value *string) error{
 }
 
 func (self *loggingStorage) Set(kv *trib.KeyValue, succ *bool) error{
-	self.issue("SET",kv)
-	return nil
+	return self.issue("Storage.Set",kv,succ)
 }
 
 func (self *loggingStorage) Keys(p *trib.Pattern, list *trib.List) error{
@@ -45,11 +61,12 @@ func (self *loggingStorage) ListGet(key string, list *trib.List) error{
 }
 
 func (self *loggingStorage) ListAppend(kv *trib.KeyValue, succ *bool) error{
-	panic("TODO")
+	return self.issue("Storage.ListAppend",kv,succ)
 }
 
 func (self *loggingStorage) ListRemove(kv *trib.KeyValue, n *int) error{
-	panic("TODO")
+	var succ bool
+	return self.issue("Storage.ListRemove",kv,& succ)
 }
 
 func (self *loggingStorage) ListKeys(p *trib.Pattern, list *trib.List) error{
