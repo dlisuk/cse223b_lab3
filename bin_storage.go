@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-func hashBinKey(word string) uint64{
+func HashBinKey(word string) uint64{
 	hasher := fnv.New64a()
 	hasher.Write([]byte("Jq0r6pLVtsXPNkVoliqAyvdZprpwtzPvgQk7WVmX"))
 	word2 := "SQA4ZC8m6DhmWhhPhKyN" + word
@@ -25,9 +25,9 @@ func NewBinClient(backs []string) trib.BinStorage {
 	backends := make([]backend,0,len(backs))
 	for i := range backs {
 		addr := backs[i]
-		hash := hashBinKey(addr)
+		hash := HashBinKey(addr)
 
-		store := NewClient(addr)
+		store := NewLoggingStorage( NewClient(addr) )
 
 		backends = append(backends, backend{ addr, hash, store })
 	}
@@ -40,7 +40,8 @@ type binClient struct{
 }
 
 func (self *binClient) Bin(name string) trib.Storage{
-	hash := hashBinKey(name)
+	//TODO: Need to add code here to ensure we are pointing at the correct "master"
+	hash := HashBinKey(name)
 	ind := sort.Search(len(self.backs), func(i int) bool{ return self.backs[i].hash >= hash})
 	if ind == -1 || ind == len(self.backs) {
 		ind = 0
