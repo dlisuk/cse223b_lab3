@@ -5,8 +5,71 @@ import (
     "time"
     "net/rpc"
     "log"
-    // "strings"
+    "trib/store"
+    "strings"
+    // "strconv"
 )
+
+
+
+
+
+type keeper struct{
+    Addr string
+    Connection *rpc.Client
+
+}
+
+func (self *keeper) getConnection() (*rpc.Client, error) {
+    c := self.Connection
+    var err error = nil
+    if c == nil {
+        c, err = rpc.DialHTTP("tcp", self.Addr)
+        self.Connection = c
+        if err != nil && strings.Contains(err.Error(), "connection refused") {
+            return nil, nil
+        }
+        if err != nil {
+            return nil, err
+        }
+    }
+    return c, nil
+}
+
+
+// func (self *keeper) isMaster(flag *bool) error{
+//     c, err := self.getConnection()
+//     if c != nil {
+        
+//     }
+//     if err != nil && err == rpc.ErrShutdown{
+//         self.Connection = nil
+//     }
+//     return err
+// }
+
+// func (self *keeper) getID(id *int) error{
+//     fields := strings.split(self.Addr, "::")
+//     if len(fields) != 2
+//         return errors.New("not enough fields in the passed in addr")
+//     *id = fields[1] 
+//     return nil
+    
+    
+// }
+
+
+// Creates an RPC client that connects to a keeper.
+func NewKeeperConnection(addr string) keeperCommunicate {
+    return &keeper{Addr:addr}
+}
+
+
+
+
+
+type keeperCommunicate interface{
+}
 
 func duplicate(Backup string, cmd string, kv *trib.KeyValue, succ *bool) {
     backup := NewClient(Backup)
@@ -21,20 +84,16 @@ func duplicate(Backup string, cmd string, kv *trib.KeyValue, succ *bool) {
     }
 }
 func ServeKeeper(kc *trib.KeeperConfig) error {
-    backs :=  make([]trib.Storage, 0, len(kc.Backs))
-    for i := range kc.Backs{
-        backs = append(backs, NewClient(kc.Backs[i]))
-    }
 
-
+    var num_of_alive_keeper int
     //go routine
-    
+
 
     /*
         Update peer keeper's info, and current keeper's id & address
     */
     keeper_addrs := make([]string, len(kc.Addrs)-1)
-    this_id := kc.This
+    // keeper_index := kc.This
     this_address := ""
     // addr_mapping := make(map[string]trib.Storage)
 
@@ -42,7 +101,6 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
     back_addr_hash_mapping := make(map[uint64]string)
 
     primary_back_replica_mapping := make(map[string]string)
-    _ = this_id
 
     //locate current keeper's address
     j := 0
@@ -54,6 +112,29 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
         keeper_addrs[j] = kc.Addrs[i]
         j++
     }
+
+        //create a new keeper back
+    //     Addr  string      // listen address
+    // Store Storage     // the underlying storage it should use
+    // Ready chan<- bool // send a value when server is ready
+
+    go func(){
+        ready := make(chan bool)
+        // s := 
+        // address := this_address+"::"+strconv.Itoa(keeper_index)
+        back := trib.BackConfig{Addr:this_address,Store:store.NewStorage(), Ready:ready}
+        ServeBack(&back)
+
+    }()
+    
+
+
+    backs :=  make([]trib.Storage, 0, len(kc.Backs))
+    for i := range kc.Backs{
+        backs = append(backs, NewClient(kc.Backs[i]))
+    }
+
+
 
     //calculate current keeper's hash
     keeper_hash := HashBinKey(this_address)
@@ -103,19 +184,35 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
     */
 
     master := make(chan bool)
-
+    master <- true
     //determine master keeper
-    go func(){
-        master <- true
-    }()
+    go func(tick <-chan time.Time){
+        num_of_alive_keeper = 0
+        for i, addr := range kc.Addrs {
+            keeper_conn := keeper{addr,nil}
+            _, err:=keeper_conn.getConnection()
+            if err == nil{
+                //handle keeper up
+                //count ++
+                num_of_alive_keeper++
+                //check the keeper's index with my index
+                if i < kc.This {
+                    master <- false
+                }
+            }
 
-    go func(master chan bool){
-        <- master
-        log.Println("master is true")
+        }
+
+    }(ticker.C)
+
+
+    go func(){
+
         //if this keeper is the master
-        go func(tick <-chan time.Time){
+        go func(tick <-chan time.Time, master chan bool){
             for {
                 _ = <- tick
+                <- master
                 go func() {
                     log.Println("clock is being synced")
                     for i := range backs {
@@ -142,9 +239,9 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
                     }
                 }()
             }
-        }(ticker.C)
+        }(ticker.C, master)
         
-    }(master)
+    }()
 
 
     
@@ -197,6 +294,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
     }()
 
     err := <- errChan
+
     return err
 }
 
