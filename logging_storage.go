@@ -18,7 +18,7 @@ type loggingStorage struct{
 }
 
 func (self *loggingStorage) issue(cmd string, kv *trib.KeyValue, finalSucc *bool) error{
-	finalSucc = false
+	*finalSucc = false
 	var succ bool
 	var clk uint64
 	self.store.Clock(uint64(0),&clk)
@@ -40,7 +40,7 @@ func (self *loggingStorage) issue(cmd string, kv *trib.KeyValue, finalSucc *bool
 		}
 		time.Sleep(250)
 	}
-	finalSucc = true
+	*finalSucc = true
 	return nil
 }
 
@@ -82,7 +82,7 @@ func MakeCmd(clk uint64, cmd string,kv *trib.KeyValue) string{
 }
 func ExtractCmd(cmd string) (string, *trib.KeyValue, error){
 	fields := strings.Split(cmd, "::")
-	if len(fields) != 4 { return nil, nil, errors.New("Insufficient Fields In CMD: " + cmd) }
+	if len(fields) != 4 { return "", nil, errors.New("Insufficient Fields In CMD: " + cmd) }
 	kv  := trib.KV(colon.Unescape(fields[2]),colon.Unescape(fields[3]))
 	com := fields[1]
 	return com, kv, nil

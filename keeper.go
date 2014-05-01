@@ -40,17 +40,17 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	}
 
 	//calculate current keeper's hash
-	keeper_hash := hashBinKey(this_address)
+	keeper_hash := HashBinKey(this_address)
 	log.Print("current keeper's hash --->", keeper_hash)
 
 	//calculate all keeper's hash & ip address mapping
 	for i := range kc.Addrs {
-		keeper_addr_hash_mapping[hashBinKey(kc.Addrs[i])] = kc.Addrs[i]
+		keeper_addr_hash_mapping[HashBinKey(kc.Addrs[i])] = kc.Addrs[i]
 	}
 
 	//calculate all backend's hash & ip address mapping
 	for i := range kc.Backs{
-		back_addr_hash_mapping[hashBinKey(kc.Backs[i])] = kc.Backs[i]
+		back_addr_hash_mapping[HashBinKey(kc.Backs[i])] = kc.Backs[i]
 	}
 
 	//sort backend address hash

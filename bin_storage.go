@@ -27,7 +27,7 @@ func NewBinClient(backs []string) trib.BinStorage {
 		addr := backs[i]
 		hash := HashBinKey(addr)
 
-		store := NewLoggingStorage( NewClient(addr) )
+		store := NewClient(addr)
 
 		backends = append(backends, backend{ addr, hash, store })
 	}
