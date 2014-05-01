@@ -8,6 +8,18 @@ import (
 	"strings"
 )
 
+func duplicate(Backup string, cmd string, kv *trib.KeyValue, succ *bool) {
+	backup := NewClient(Backup)
+	switch {
+	case cmd == "Set":
+		backup.Set(kv, succ)
+	case cmd == "ListAppend":
+		backup.ListAppend(kv, succ)
+	case cmd == "ListRemove":
+		var n int
+		backup.ListRemove(kv,&n)
+	}
+}
 func ServeKeeper(kc *trib.KeeperConfig) error {
 	backs :=  make([]trib.Storage, 0, len(kc.Backs))
 	for i := range kc.Backs{
