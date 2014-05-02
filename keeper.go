@@ -270,12 +270,14 @@ func (self *localKeeper) serverCrash(index int){
 	rlb = self.backends[back.replicates].hash
 	mlb = self.backends[back.replicates].replicates
 }
+
 func (self *localKeeper) serverJoin(index int){
 	//Caller must have locked the replicator lock
 	//TODO: Here we need to figure out what to do when a server comes up, make sure it's replicator can take over/such
 	self.backends[index].up = true
 }
-func (self *localKeeper) copy(s int, d int,lb uint64, rb uint64) error{
+
+func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bool) error{
 	source := self.backends[s]
 	dest   := self.backends[d]
 	return nil
