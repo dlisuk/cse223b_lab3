@@ -309,44 +309,73 @@ func (self *localKeeper) serverCrash(index int){
 func (self *localKeeper) serverJoin(index int){
 	//Caller must have locked the replicator lock
 	//TODO: Here we need to figure out what to do when a server comes up, make sure it's replicator can take over/such
-	joined_server = self.backends[index]
-  joined_server.up = true
 
+	predInd := -1
+	succInd := -1
+	for i := index -1; i >= 0; i -- {
+		if self.backends[i].up{
+			predInd = i
+			break
+		}
+	}
+	if predInd == -1{
+		for i := len(self.backends)-1; i > index; i -- {
+			if self.backends[i].up{
+				predInd = i
+				break
+			}
+		}
+	}
+	for i := index+1; i < len(self.backends); i ++ {
+		if self.backends[i].up{
+			succInd = i
+			break
+		}
+	}
+	if succInd == -1{
+		for i := 0; i < index; i ++ {
+			if self.backends[i].up{
+				succInd = i
+				break
+			}
+		}
+	}
+	if succInd == -1 || predInd == -1{
+		//TODO:What do we do here?
+	}
 
-  // for i := index - 1; i >= 0; i-- {
-  //   replicates := self.backends[i]
-  //   responseHash := new(uint64)
-  //   if(joined_server.HeartBeat(joined_server.hash, replicates.hash)){
+	pred 					:= self.backends[predInd]
+	joined_server := self.backends[index]
+	succ 					:= self.backends[succInd]
 
-  //   }
-  //   replicator := self.backends[joined_server.replicator]
-  // }
-
-
-  // joined_server.mlb = self.backends[replicates].hash
-  // joined_server.rlb = self.backends[replicator].rlb
-  // self.backends[replicator].rlb = joined_server.mlb
 
   allDoneCh := make(<-chan bool)
+
+	var passed bool
+	//Step 0
+	_ := succ.store.Set(trib.KV(ReplicKeyLB,strconv.Itoa(succ.mlb)), &passed)
+	//Step 1
+	_ := succ.store.Set(trib.KV(MasterKeyLB,strconv.Itoa(joined_server.hash)), &passed)
+	//Step 2
+	//TODO: FLUSH LOG OF SUCC , this has to block
+
+	//Step 3
+	_ := joined_server.store.Set(trib.KV(MasterKeyLB,strconv.Itoa(succ.mlb)), &passed)
+
 
   //First we want to initiate the copies since they are long running and can be backgrounded
   //crashed server master data -> new slave
   copy1ch := make(<-chan bool)
-  go self.copy(replicaInd,joinServerInd, back.mlb, back.hash, copy1ch)
+	//Step 4
+  go self.copy(succInd,index, pred.mlb,  joined_server.hash, copy1ch)
   go func(){
-    var succ bool
-    //the new master can immediatly be the master, accept issueing but not committing commands
-    _ := newMaster.store.Set(trib.KV(MasterKeyLB, strconv.Itoa(back.mlb)), &succ)
-    newMaster.mlb = back.mlb
-
     _ := <- copy1ch
-    //The new slave is now officially a slave
-    _ := newSlave.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.mlb)), &succ)
-    newSlave.rlb = back.mlb
-    back.mlb = -1
+		//Step 5
+		_ := joined_server.store.Set(trib.KV(ReplicKeyLB,strconv.Itoa(succ.rlb)), &passed)
     allDoneCh <- true
   }()
 
+	_ := <- allDoneCh
 
 }
 
