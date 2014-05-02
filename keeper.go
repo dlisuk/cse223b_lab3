@@ -11,21 +11,34 @@ import (
   "strconv"
 )
 
-type keeper struct{
+type remoteKeeper struct{
   Addr string
   This int
   Hash uint64
   Connection *rpc.Client
 }
 
-func (self *keeper) HeartBeat(senderHash uint64, responseHash *uint64) error {
+func (self *remoteKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error {
+    c, err := self.getConnection()
+    if c != nil {
+        //set the responseHash
+        responseHash = self.Hash
+        return nil
+    }
+    if err != nil && err == rpc.ErrShutdown{
+        return err
+    }
+    return nil
 }
 
-func NewRemoteKeeer(Addr string, This int ) *keeper{
-
+func NewRemoteKeeper(addr string, this int) *remoteKeeper{
+    //compute hash
+    hash := HashBinKey(Addr)
+    return &remoteKeeper{Addr:addr, This:this,Hash:hash, Connection:nil}
 }
 
-func (self *keeper) getConnection() (*rpc.Client, error) {
+
+func (self *remoteKeeper) getConnection() (*rpc.Client, error) {
 	c := self.Connection
 	var err error = nil
 	if c == nil {
