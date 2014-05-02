@@ -265,11 +265,12 @@ func (self *localKeeper) serverCrash(index int){
 	newSlaveInd  := newMaster.replicator
 	newSlave     := self.backends[newSlaveInd]
 	//We don't care if this backup is  down, someone else must have dealt with it
-	if !back.up{
-		return
-	}
-
 	allDoneCh := make(<-chan bool)
+
+	var succ bool
+	//Step 0
+	//the new master can immediatly be the master, accept issueing but not committing commands
+	_ = newMaster.store.Set(trib.KV(MasterKeyLB, strconv.Itoa(back.mlb)), &succ)
 
 	//First we want to initiate the copies since they are long running and can be backgrounded
 	//crashed server master data -> new slave
@@ -277,15 +278,9 @@ func (self *localKeeper) serverCrash(index int){
 	go self.copy(newMasterInd,newSlaveInd, back.mlb, back.hash, copy1ch)
 	go func(){
 		var succ bool
-		//the new master can immediatly be the master, accept issueing but not committing commands
-		_ = newMaster.store.Set(trib.KV(MasterKeyLB, strconv.Itoa(back.mlb)), &succ)
-		newMaster.mlb = back.mlb
-
 		_ := <- copy1ch
 		//The new slave is now officially a slave
 		_ := newSlave.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.mlb)), &succ)
-		newSlave.rlb = back.mlb
-		back.mlb = -1
 		allDoneCh <- true
 	}()
 
@@ -297,8 +292,6 @@ func (self *localKeeper) serverCrash(index int){
 		_ := <- copy2ch
 		//The new master is now officially a slave to the old master's master
 		_ = newMaster.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.rlb)), &succ)
-		newSlave.rlb = back.rlb
-		back.rlb = -1
 		allDoneCh <- true
 	}()
 
