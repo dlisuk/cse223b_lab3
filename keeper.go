@@ -10,6 +10,7 @@ import (
   "strconv"
 	"errors"
 	"sync"
+	"trib/local"
 )
 
 type remoteKeeper struct{
@@ -60,10 +61,23 @@ type localKeeper struct{
 	hash           uint64
 	lowerBound     uint64
 	remoteKeepers  []remoteKeeper
-	backends       []backend
+	backends       []backendKeeper
 	errChan        chan error
 	replicators    map[int]int
 	replicatorLock sync.Mutex
+}
+type backendKeeper struct{
+	addr      string
+	hash      uint64
+	store     trib.Storage
+	replicator int
+	up        bool
+}
+
+func (self *localKeeper) inRange(x uint64) bool{
+	lb := self.lowerBound < x
+	ub := x <= self.hash
+	return lb && ub || (self.hash < self.lowerBound && (lb || ub))
 }
 
 //This is tthe place where we send heart beats to remote keepers
@@ -141,13 +155,18 @@ func (self *localKeeper) clockManager(){
 }
 
 //This is the function that handles replication of master/slaves
+//Also this detects server crashes
 func (self *localKeeper) replicationManager(){
 	//This maps indexes of the backends struct list to index
 	for {
-		time.Sleep(1 * time.Millisecond)
-		PR_Loop: for p,r := range self.replicators {
-
-			primary := self.backends[p].store
+		time.Sleep(250 * time.Millisecond)
+		self.replicatorLock.Lock()
+		PR_Loop: for p,p_back := range self.backends {
+			if p_back.up == false || !self.inRange(p_back.hash){
+				continue
+			}
+			primary := p_back.store
+			r       := p_back.replicator
 			replica := self.backends[r].store
 
 			var rawLog trib.List
@@ -191,15 +210,40 @@ func (self *localKeeper) replicationManager(){
 				}
 			}//end cmd list loop
 		} //end p,r for loop
+		self.replicatorLock.Unlock()
 	}// end infinite loop
 }
 
 func (self *localKeeper) serverCrash(index int){
+	//Caller must have locked the replicator lock
 	//TODO: Here we need to figure out what to do when a server goes down, make sure it's replicator can take over/such
+	self.backends[index].up = false
+}
+func (self *localKeeper) serverJoin(index int){
+	//Caller must have locked the replicator lock
+	//TODO: Here we need to figure out what to do when a server comes up, make sure it's replicator can take over/such
+	self.backends[index].up = true
 }
 
-//This is the function that figures out when backends come up/go down and handles copying of all data from one backend to annother
+//This is the function that figures out when backends come up
 func (self *localKeeper) backendManager(){
+	//Run forever and ever
+	for {
+		for i,back := range self.backends{
+			//If it's marked as up, we don't care about it
+			if back.up || !self.inRange(back.hash){
+				continue
+			}
+			var res string
+			err := back.store.Get(MasterKeyLB, &res)
+			//This server is up now
+			if err == nil{
+				self.replicatorLock.Lock()
+				self.serverJoin(i)
+				self.replicatorLock.Unlock()
+			}
+		}
+	}
 }
 
 
@@ -227,9 +271,9 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	log.Println(this_keeper)
 
   //create backend structs list
-  backend_structs_list := make([]backend, 0, len(kc.Backs))
+  backend_structs_list := make([]backendKeeper, 0, len(kc.Backs))
   for i := range kc.Backs{
-    backend_structs_list = append(backend_structs_list, backend{addr: kc.Backs[i], hash: HashBinKey(kc.Backs[i]), store: NewClient(kc.Backs[i])})
+    backend_structs_list = append(backend_structs_list, backendKeeper{addr: kc.Backs[i], hash: HashBinKey(kc.Backs[i]), store: NewClient(kc.Backs[i]), replicator:-1, up:false})
   }
 	sort.Sort(byHash(backend_structs_list))
 	log.Println(backend_structs_list)
