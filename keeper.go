@@ -11,6 +11,8 @@ import (
   "math"
   "errors"
   "sync"
+  "net/http"
+  "net"
 )
 
 type remoteKeeper struct{
@@ -39,7 +41,7 @@ func (self *remoteKeeper) HeartBeat(senderHash uint64, responseHash *uint64) err
 
 func NewRemoteKeeper(addr string, this int) *remoteKeeper{
     //compute hash
-    hash := HashBinKey(Addr)
+    hash := HashBinKey(addr)
     return &remoteKeeper{Addr:addr, 
                         This:this, 
                         Hash:hash, 
@@ -97,19 +99,18 @@ func (self *localKeeper) inRange(x uint64) bool{
 //This is tthe place where we send heart beats to remote keepers
 func (self *localKeeper) pingNeighbor(){
     
-    neighborIndex := (self.index +1)%len(remoteKeepers) 
+    neighborIndex := (self.index +1)%len(self.remoteKeepers) 
     for{
         if neighborIndex == self.index{
             break;
         }
-        remoteKeeper := remoteKeepers[neighborIndex]
-        var responseHash int
-        err := remoteKeeper.HeartBeat(self.Hash, &responseHash)
+        remoteKeeper := self.remoteKeepers[neighborIndex]
+        var responseHash uint64
+        err := remoteKeeper.HeartBeat(self.hash, &responseHash)
         if err != nil{
-            neighborIndex = (neighborIndex+1)%len(remoteKeepers);
-        }
-        else{
-            break;
+            neighborIndex = (neighborIndex+1)%len(self.remoteKeepers)
+        }else{
+            break
         }
     }
 }
@@ -292,28 +293,19 @@ func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) erro
 	//TODO: we then need to send what our lower bound is.
     if self.lowerBound == senderHash {
         //do nothing
-    }
-    else {
+    }else {
         self.lowerBound = senderHash
     }
-    responseHash = self.lowerBound
+    *responseHash = self.lowerBound
     return nil
 }
 
 
-// Creates an RPC client that connects to a keeper.
-func NewKeeperConnection(addr string) keeperCommunicate {
-  return &keeper{Addr:addr}
-}
-
-type keeperCommunicate interface{
-
-}
 
 func (self *localKeeper) keeperServer() error {
     s := rpc.NewServer()
     s.RegisterName("LocalKeeper", self)
-    listener, err := net.Listen("tcp",self.Addr)
+    listener, err := net.Listen("tcp",self.remoteKeepers[self.index].Addr)
 
     if err != nil{
         return err
@@ -354,7 +346,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	masterClock := false
 
 	keeper := &localKeeper{
-        this_index
+        this_index,
 		this_keeper.Hash,
 		this_keeper.Hash,
 		keeper_structs_list,
@@ -389,7 +381,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 func execute(backend trib.Storage, cmd string) error{
   op, kv, err := ExtractCmd(cmd)
 
-	if err != nil { return "",err }
+	if err != nil { return err }
 	response := ""
     switch op{
     case "Set":
@@ -407,7 +399,7 @@ func execute(backend trib.Storage, cmd string) error{
 		default:
 			err = errors.New("Undefined operation: " + op)
   }
-	return response,err
+	return err
 }
 
 
