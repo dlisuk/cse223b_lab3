@@ -319,6 +319,15 @@ func (self *localKeeper) serverJoin(index int){
   self.backends[replicator].rlb = self.backends[index].mlb
 }
 
+func (self *localKeeper) binInRange(lb uint64, ub uint64, key string) bool{
+	fields  := strings.Split(key, "::")
+	binName := fields[0]
+	binHash := HashBinKey(binName)
+	lbPass := lb < binHash
+	ubPass := binHash <= ub
+	return lbPass && ubPass || (ub < lb && (lbPass || ubPass) )
+}
+
 func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bool) error{
 	source := self.backends[s]
 	dest   := self.backends[d]
