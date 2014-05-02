@@ -7,6 +7,7 @@ import(
 	"strings"
 	"trib/colon"
 	"time"
+	"strconv"
 )
 
 func NewLoggingStorage( store trib.Storage) trib.Storage{
@@ -17,8 +18,7 @@ type loggingStorage struct{
 	store trib.Storage
 }
 
-func (self *loggingStorage) issue(cmd string, kv *trib.KeyValue, finalSucc *bool) error{
-	*finalSucc = false
+func (self *loggingStorage) issue(cmd string, kv *trib.KeyValue, finalSucc *bool, finaln *int) error{
 	var succ bool
 	var clk uint64
 	self.store.Clock(uint64(0),&clk)
@@ -31,17 +31,27 @@ func (self *loggingStorage) issue(cmd string, kv *trib.KeyValue, finalSucc *bool
 	var res trib.List
 	succ = false
 	for succ == false {
-		err := self.store.ListGet(LogKey,&res)
+		err := self.store.ListGet(ResLogKey,&res)
 		if err != nil { return err }
-		succ = true
 		for _,v := range res.L{
-			if v == issueString{
-				succ = false
+			if strings.HasPrefix(v, issueString){
+				vP := strings.TrimPrefix(v,issueString + "::")
+				if finalSucc != nil{
+
+					s, _ := strconv.ParseBool(vP)
+					*finalSucc = s
+				}
+				if finaln != nil{
+					n, _ := strconv.ParseInt(vP,10,64)
+					nP := int(n)
+					*finaln = nP
+				}
+				self.store.ListRemove(trib.KV(ResLogKey,v),nil)
+				succ = true
 			}
 		}
 		time.Sleep(250)
 	}
-	*finalSucc = true
 	return nil
 }
 
@@ -50,7 +60,7 @@ func (self *loggingStorage) Get(key string, value *string) error{
 }
 
 func (self *loggingStorage) Set(kv *trib.KeyValue, succ *bool) error{
-	return self.issue("Storage.Set",kv,succ)
+	return self.issue("Storage.Set",kv,succ,nil)
 }
 
 func (self *loggingStorage) Keys(p *trib.Pattern, list *trib.List) error{
@@ -62,12 +72,11 @@ func (self *loggingStorage) ListGet(key string, list *trib.List) error{
 }
 
 func (self *loggingStorage) ListAppend(kv *trib.KeyValue, succ *bool) error{
-	return self.issue("Storage.ListAppend",kv,succ)
+	return self.issue("Storage.ListAppend",kv,succ,nil)
 }
 
 func (self *loggingStorage) ListRemove(kv *trib.KeyValue, n *int) error{
-	var succ bool
-	return self.issue("Storage.ListRemove",kv,& succ)
+	return self.issue("Storage.ListRemove",kv,nil,n)
 }
 
 func (self *loggingStorage) ListKeys(p *trib.Pattern, list *trib.List) error{
