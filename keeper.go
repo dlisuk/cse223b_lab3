@@ -546,7 +546,8 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		sync.Mutex{} }
 
   //start the keeper server
-	keeper.keeperServer()
+	go keeper.keeperServer()
+	log.Println("keeperServer returned")
   log.Println("start ping neighbor")
 	go keeper.pingNeighbor()
   log.Println("start running backend manager")
