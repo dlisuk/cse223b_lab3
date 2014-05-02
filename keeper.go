@@ -8,6 +8,7 @@ import (
   "strings"
   "sort"
   "strconv"
+  "math"
 	"errors"
 )
 
@@ -70,72 +71,81 @@ func (self *localKeeper) pingNeighbor(){
 }
 
 //This is the function which calls the clock on all the backends if we are the master
-func (self *localKeeper) clockManager(){
-	var highest uint64
-	ticker  := time.NewTicker(time.Second)
-	errChan := make(chan error)
-	seenClocks := make(chan uint64)
+//This is the function which calls the clock on all the backends if we are the master
+func (self *localKeeper) clockManager(master chan bool){
+  ticker  := time.NewTicker(time.Second)
+  /*
+      clock synchronization with all backends
+  */
 
-	/*
-			clock synchronization with all backends
-	*/
+  //TODO: Make sure all this time stuff is correct
 
-	//TODO: Make sure all this time stuff is correct
-	master := make(chan bool)
-	master <- true
+  //determine master keeper
+  go func(tick <-chan time.Time){
 
-	//determine master keeper
-	go func(tick <-chan time.Time){
+    var minimumHash uint64
+    minimumHash = math.MaxUint64
 
-		num_of_alive_keeper = 0
+    for _, keeper := range self.remoteKeepers {
+      responseHash := new(uint64)
+      err := keeper.HeartBeat(self.hash, responseHash)
+      if err == nil{
+        //handle keeper up
+        //count ++
+        //check the keeper's index with my index
+        if *responseHash < minimumHash {
+          minimumHash = *responseHash
+        }
+      }
+    }
+    if minimumHash == self.hash {
+      master <- true
+    }
+  }(ticker.C)
+}
 
-		for i, keeper := range keeper_structs_list {
-			_, err := keeper.getConnection()
-			if err == nil{
-				//handle keeper up
-				//count ++
-				num_of_alive_keeper++
-				//check the keeper's index with my index
-				if i < kc.This {
-					master <- false
-				}
-			}
-		}
+func (self *localKeeper) syncClock(master chan bool){
+    //if this keeper is the master
+  var highest uint64
+  ticker  := time.NewTicker(time.Second)
+  seenClocks := make(chan uint64)
 
-	}(ticker.C)
-	//if this keeper is the master
-	go func(tick <-chan time.Time, master chan bool){
-		for {
-			_ = <- tick
-			// some <- master
-			<- master
-			go func() {
-				log.Println("clock is being synced")
-				for i := range backend_structs_list {
-					go func(back trib.Storage) {
-						var ret uint64
-						err := back.Clock(highest, &ret)
-						if err != nil && err != rpc.ErrShutdown{
-							self.errChan <- err
-						}
-						seenClocks <- ret
-					}(backend_structs_list[i].store)
-				}
-				var maxClock uint64
-				for _ = range backend_structs_list {
-					nextClock := <-seenClocks
-					if nextClock > maxClock{
-						maxClock = nextClock
-					}
-				}
-				if maxClock > highest{
-					highest = maxClock
-				}else{
-					highest = highest + 1
-				}
-			}()
-		}
-	}(ticker.C, master)
+  go func(tick <-chan time.Time){
+    for {
+      _ = <- tick
+      // some <- master
+      master_flag := <- master
+      switch master_flag{
+        case true:
+          go func() {
+            log.Println("clock is being synced")
+            for i := range self.backends {
+              go func(back trib.Storage) {
+                var ret uint64
+                err := back.Clock(highest, &ret)
+                if err != nil && err != rpc.ErrShutdown{
+                  self.errChan <- err
+                }
+                seenClocks <- ret
+              }(self.backends[i].store)
+            }
+            var maxClock uint64
+            for _ = range self.backends {
+              nextClock := <-seenClocks
+              if nextClock > maxClock{
+                maxClock = nextClock
+              }
+            }
+            if maxClock > highest{
+              highest = maxClock
+            }else{
+              highest = highest + 1
+            }
+          }()
+        case false:
+      }
+    }
+  }(ticker.C)
 }
 
 //This is the function that handles replication of master/slaves
@@ -207,23 +217,24 @@ func (self *localKeeper) backendManager(){
 func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error{
 	//TODO: we need to use the senderHash to figure out if we need to change our lower bound.
 	//TODO: we then need to send what our lower bound is.
+  return nil
 }
 
 
 func ServeKeeper(kc *trib.KeeperConfig) error {
 
   //create keeper structs list
-  keeper_structs_list := make([]keeper, 0, len(kc.Addrs))
-	var this_keeper *keeper
+  keeper_structs_list := make([]remoteKeeper, 0, len(kc.Addrs))
+	var this_keeper *remoteKeeper
   for i := range kc.Addrs{
-    keeper_structs_list = append(keeper_structs_list, keeper{Addr: kc.Addrs[i], This: i, Hash: HashBinKey(kc.Backs[i]), Connection: nil })
+    keeper_structs_list = append(keeper_structs_list, remoteKeeper{Addr: kc.Addrs[i], This: i, Hash: HashBinKey(kc.Backs[i]), Connection: nil })
 		if(i == kc.This){
-			this_keeper = keeper_structs_list[i]
+			this_keeper = &keeper_structs_list[i]
 		}
   }
   sort.Sort(keeperByHash(keeper_structs_list))
-  log.Println(keeper_structs_list)
-	log.Println(this_keeper)
+  log.Println("keeper structs list --->", keeper_structs_list)
+	log.Println("current keeper --->", this_keeper)
 
   //create backend structs list
   backend_structs_list := make([]backend, 0, len(kc.Backs))
@@ -231,7 +242,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
     backend_structs_list = append(backend_structs_list, backend{addr: kc.Backs[i], hash: HashBinKey(kc.Backs[i]), store: NewClient(kc.Backs[i])})
   }
 	sort.Sort(byHash(backend_structs_list))
-	log.Println(backend_structs_list)
+	log.Println("backend structs list --->", backend_structs_list)
 	errChan := make(chan error)
 
 	keeper := &localKeeper{
@@ -242,10 +253,21 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		errChan,
 		make(map[int]int)}
 
+  log.Println("start ping neighbor")
 	go keeper.pingNeighbor()
+  log.Println("start running backend manager")
 	go keeper.backendManager()
-	go keeper.clockManager()
+  log.Println("start running replication manager")
 	go keeper.replicationManager()
+
+  masterClock := make(chan bool)
+
+  log.Println("start clock manager")
+  go keeper.clockManager(masterClock)
+
+  log.Println("start master clock daemon")
+  go keeper.syncClock(masterClock)
+
 
   if kc.Ready != nil { go func(ch chan<- bool) { ch <- true } (kc.Ready) }
 
