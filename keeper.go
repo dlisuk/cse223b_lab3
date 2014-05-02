@@ -140,56 +140,67 @@ func (self *localKeeper) clockManager(){
 
 //This is the function that handles replication of master/slaves
 func (self *localKeeper) replicationManager(){
-		//This maps indexes of the backends struct list to index
-		for {
-			time.Sleep(1 * time.Millisecond)
-			for p,r := range self.replicators {
+	//This maps indexes of the backends struct list to index
+	for {
+		time.Sleep(1 * time.Millisecond)
+		PR_Loop: for p,r := range self.replicators {
 
-				//TODO: HERE IS THE CLIENT IN THE STRUCT: backend_structs_list[0].store.Get
-				//TODO: We should mark the lower bound replica/lower bound master on the backends here
-				primary := self.backends[p].store
-				replica := self.backends[r].store
+			primary := self.backends[p].store
+			replica := self.backends[r].store
 
-				var rawLog trib.List
-				err := primary.ListGet(LogKey,&rawLog)
-				//TODO:Check if replicator is down
-				if err!=nil{
-					//TODO:In this event we need to promote the replicator to be primary
-				}
-				for _,cmd := range rawLog.L{
-					var n int
-					err = execute(replica,cmd)
+			var rawLog trib.List
+			err := primary.ListGet(LogKey,&rawLog)
+			if err!=nil{
+				self.serverCrash(p)
+				break PR_Loop
+			}
+			for _,cmd := range rawLog.L{
+				var n int
+				resr,err := execute(replica,cmd)
+				if err != nil {
+					self.serverCrash(r)
+					break PR_Loop
+				}else{
+					//execute on the primary
+					resp,err := execute(primary,cmd)
 					if err != nil {
-						//TODO:In this condition we need to find a new replicator
+						self.serverCrash(r)
+						break PR_Loop
 					}else{
-						//execute on the primary
-						err = execute(primary,cmd)
+						log_kv := trib.KV(LogKey, cmd)
+						err = primary.ListRemove(log_kv, &n)
 						if err != nil {
-							//TODO:In this condition we need to promote the replicator to be primary
-						}else{
-							log_kv := trib.KV(LogKey, cmd)
-							err = primary.ListRemove(log_kv, &n)
-							//TODO: Add results log?
-
-							if n!=1{
-								//placeholder
-							}
-
-							if err!=nil {
-								//placeholder
-							}
+							self.serverCrash(p)
+							break PR_Loop
+						}
+						if n!=1{
+							//TODO: What does this case mean, is it even possible?
+						}
+						if resr != resp {
+							//TODO: Responses don't match, does this matter?
+						}
+						//Response log, make it a bit cleaner
+						err = primary.ListAppend(trib.KV(ResLogKey,cmd + "::" + resp), nil)
+						if err != nil {
+							self.serverCrash(p)
+							break PR_Loop
 						}
 					}
+				}
+			}//end cmd list loop
+		} //end p,r for loop
+	}// end infinite loop
+}
 
-				}//end cmd list loop
-			} //end k,v for loop
-		}// end for loop
-	}
+func (self *localKeeper) serverCrash(index int){
+	//TODO: Here we need to figure out what to do when a server goes down, make sure it's replicator can take over/such
+
+}
 
 //This is the function that figures out when backends come up/go down and handles copying of all data from one backend to annother
 func (self *localKeeper) backendManager(){
-
 }
+
 
 
 //This is the heart beat function we need to call through RPC
