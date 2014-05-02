@@ -246,7 +246,8 @@ func (self *localKeeper) replicationManager(){
 							//TODO: Responses don't match, does this matter?
 						}
 						//Response log, make it a bit cleaner
-						err = primary.ListAppend(trib.KV(ResLogKey,cmd + "::" + resp), nil)
+						var dummySucc bool
+						err = primary.ListAppend(trib.KV(ResLogKey,cmd + "::" + resp), &dummySucc)
 						if err != nil {
 							self.serverCrash(p)
 							break PR_Loop
@@ -263,6 +264,7 @@ func (self *localKeeper) replicationManager(){
 
 
 func (self *localKeeper) serverCrash(index int){
+	log.Println("SERVER CRASH " + strconv.Itoa(index))
 	//Caller must have locked the replicator lock
 	back := self.backends[index]
 	newMasterInd := back.replicator
@@ -305,6 +307,7 @@ func (self *localKeeper) serverCrash(index int){
 }
 
 func (self *localKeeper) serverJoin(index int){
+	log.Println("SERVER Join " + strconv.Itoa(index))
 	//Caller must have locked the replicator lock
 	//TODO: Here we need to figure out what to do when a server comes up, make sure it's replicator can take over/such
 
@@ -562,7 +565,6 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	upBacks := 0
 	for upBacks < 3 {
 		time.Sleep(250)
-		log.Println("trying upBacks" + strconv.Itoa(upBacks))
 		for i,b := range keeper.backends {
 			var res string
 			if(b.up){
@@ -578,11 +580,8 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 					upBacks = upBacks + 1
 				}
 			}
-			log.Println(res)
 		}
 	}
-	log.Println(keeper.backends)
-	log.Println("trying upBacks" + strconv.Itoa(upBacks))
 
 
 	upKeepers := make([]int,0)

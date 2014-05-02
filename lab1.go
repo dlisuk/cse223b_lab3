@@ -10,7 +10,7 @@ import (
 
 // Creates an RPC client that connects to addr.
 func NewClient(addr string) trib.Storage {
-	return &client{addr, nil, true}
+	return &retryclient{ 3, &client{addr, nil, true}}
 }
 
 // Serve as a backend based on the given configuration
@@ -41,7 +41,7 @@ func (self *client) getConnection() (*rpc.Client, error) {
 		c, err = rpc.DialHTTP("tcp", self.addr)
 		self.connection = c
 		if err != nil && strings.Contains(err.Error(), "connection refused") {
-			return nil, rpc.ErrShutdown
+			return c, err
 		}
 		if err != nil {
 			return nil, err
@@ -138,6 +138,103 @@ func (self *client) Clock(atLeast uint64, ret *uint64) error{
 	}
 	if err != nil && err == rpc.ErrShutdown{
 		self.connection = nil
+	}
+	return err
+}
+
+
+type retryclient struct{
+	tries int
+	store trib.Storage
+}
+
+func (self *retryclient) Get(key string, value *string) error{
+	var err error
+	for i:=0; i < self.tries; i++{
+		err = self.store.Get(key,value)
+		if err == nil{
+			return err
+		}
+	}
+	return err
+}
+
+func (self *retryclient) Set(kv *trib.KeyValue, succ *bool) error{
+	var err error
+	for i:=0; i < self.tries; i++{
+		err = self.store.Set(kv,succ)
+		if err == nil{
+			return err
+		}
+	}
+	return err
+}
+
+func (self *retryclient) Keys(p *trib.Pattern, list *trib.List) error{
+	list.L = make([]string,0)
+	var err error
+	for i:=0; i < self.tries; i++{
+		err = self.store.Keys(p,list)
+		if err == nil{
+			return err
+		}
+	}
+	return err
+}
+
+func (self *retryclient) ListGet(key string, list *trib.List) error{
+	list.L = make([]string,0)
+	var err error
+	for i:=0; i < self.tries; i++{
+		err = self.store.ListGet(key,list)
+		if err == nil{
+			return err
+		}
+	}
+	return err
+}
+
+func (self *retryclient) ListAppend(kv *trib.KeyValue, succ *bool) error{
+	var err error
+	for i:=0; i < self.tries; i++{
+		err = self.store.ListAppend(kv,succ)
+		if err == nil{
+			return err
+		}
+	}
+	return err
+}
+
+func (self *retryclient) ListRemove(kv *trib.KeyValue, n *int) error{
+	var err error
+	for i:=0; i < self.tries; i++{
+		err = self.store.ListRemove(kv,n)
+		if err == nil{
+			return err
+		}
+	}
+	return err
+}
+
+func (self *retryclient) ListKeys(p *trib.Pattern, list *trib.List) error{
+	list.L = make([]string,0)
+	var err error
+	for i:=0; i < self.tries; i++{
+		err = self.store.ListKeys(p,list)
+		if err == nil{
+			return err
+		}
+	}
+	return err
+}
+
+func (self *retryclient) Clock(atLeast uint64, ret *uint64) error{
+	var err error
+	for i:=0; i < self.tries; i++{
+		err = self.store.Clock(atLeast,ret)
+		if err == nil{
+			return err
+		}
 	}
 	return err
 }
