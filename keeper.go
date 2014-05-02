@@ -263,10 +263,16 @@ func (self *localKeeper) serverCrash(index int){
 	if !back.up{
 		return
 	}
-	self.backends[index].up = false
 
-	rlb = self.backends[back.replicates].hash
-	mlb = self.backends[back.replicates].replicates
+	replicator := self.backends[back.replicator]
+	replicates := self.backends[back.replicates]
+
+	var succ bool
+	//First we have to set the MLB on the new master, thus it can start accepting logs
+	replicator.store.Set(trib.KV(MasterKeyLB, back.mlb), &succ)
+	//now we copy all data that was replicated on the replicator to the replicators replicator
+	self.copy(back.replicator,replicator.replicator, back.mlb, back.hash)
+
 }
 func (self *localKeeper) serverJoin(index int){
 	//Caller must have locked the replicator lock
