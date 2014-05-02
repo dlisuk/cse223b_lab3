@@ -259,22 +259,51 @@ func (self *localKeeper) replicationManager(){
 
 func (self *localKeeper) serverCrash(index int){
 	//Caller must have locked the replicator lock
-	//TODO: Here we need to figure out what to do when a server goes down, make sure it's replicator can take over/such
 	back := self.backends[index]
+	newMasterInd := back.replicator
+	newMaster    := self.backends[newMasterInd]
+	newSlaveInd  := newMaster.replicator
+	newSlave     := self.backends[newSlaveInd]
 	//We don't care if this backup is  down, someone else must have dealt with it
 	if !back.up{
 		return
 	}
 
-	replicator := self.backends[back.replicator]
-	replicates := self.backends[back.replicates]
+	allDoneCh := make(<-chan bool)
 
-	var succ bool
-	//First we have to set the MLB on the new master, thus it can start accepting logs
-	replicator.store.Set(trib.KV(MasterKeyLB, back.mlb), &succ)
-	//now we copy all data that was replicated on the replicator to the replicators replicator
-	self.copy(back.replicator,replicator.replicator, back.mlb, back.hash)
+	//First we want to initiate the copies since they are long running and can be backgrounded
+	//crashed server master data -> new slave
+	copy1ch := make(<-chan bool)
+	go self.copy(newMasterInd,newSlaveInd, back.mlb, back.hash, copy1ch)
+	go func(){
+		var succ bool
+		//the new master can immediatly be the master, accept issueing but not committing commands
+		_ := newMaster.store.Set(trib.KV(MasterKeyLB, strconv.Itoa(back.mlb)), &succ)
+		newMaster.mlb = back.mlb
 
+		_ := <- copy1ch
+		//The new slave is now officially a slave
+		_ := newSlave.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.mlb)), &succ)
+		newSlave.rlb = back.mlb
+		back.mlb = -1
+		allDoneCh <- true
+	}()
+
+	//crashed server slave data -> new master
+	copy2ch := make(<-chan bool)
+	go self.copy(back.replicates, newMasterInd, back.rlb, back.mlb, copy2ch)
+	go func(){
+		var succ bool
+		_ := <- copy2ch
+		//The new master is now officially a slave to the old master's master
+		_ := newMaster.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.rlb)), &succ)
+		newSlave.rlb = back.rlb
+		back.rlb = -1
+		allDoneCh <- true
+	}()
+
+	_ <- allDoneCh
+	_ <- allDoneCh
 }
 
 func (self *localKeeper) serverJoin(index int){
