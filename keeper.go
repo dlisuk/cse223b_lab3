@@ -585,6 +585,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	log.Println(keeper.backends)
 	log.Println("trying upBacks" + strconv.Itoa(upBacks))
 
+
 	upKeepers := make([]int,0)
 	for i,b := range keeper.backends {
 		if b.up{
