@@ -354,7 +354,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	masterClock := false
 
 	keeper := &localKeeper{
-        this_index
+		this_index,
 		this_keeper.Hash,
 		this_keeper.Hash,
 		keeper_structs_list,
@@ -386,7 +386,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   return err
 }
 
-func execute(backend trib.Storage, cmd string) error{
+func execute(backend trib.Storage, cmd string) (string,error){
   op, kv, err := ExtractCmd(cmd)
 
 	if err != nil { return "",err }
