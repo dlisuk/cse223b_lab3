@@ -100,6 +100,7 @@ func (self *localKeeper) inRange(x uint64) bool{
 func (self *localKeeper) pingNeighbor(){
     
     neighborIndex := (self.index +1)%len(self.remoteKeepers) 
+
     for{
         if neighborIndex == self.index{
             break;
@@ -263,6 +264,12 @@ func (self *localKeeper) serverJoin(index int){
 	//TODO: Here we need to figure out what to do when a server comes up, make sure it's replicator can take over/such
 	self.backends[index].up = true
 }
+func (self *localKeeper) copy(s int, d int,lb uint64, rb uint64) error{
+	source := self.backends[s]
+	dest   := self.backends[d]
+	return nil
+}
+
 
 //This is the function that figures out when backends come up
 func (self *localKeeper) backendManager(){
@@ -346,7 +353,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	masterClock := false
 
 	keeper := &localKeeper{
-        this_index,
+		this_index,
 		this_keeper.Hash,
 		this_keeper.Hash,
 		keeper_structs_list,
@@ -378,7 +385,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   return err
 }
 
-func execute(backend trib.Storage, cmd string) error{
+func execute(backend trib.Storage, cmd string) (string,error){
   op, kv, err := ExtractCmd(cmd)
 
 	if err != nil { return err }
