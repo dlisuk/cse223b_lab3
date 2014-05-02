@@ -8,7 +8,7 @@ import (
   "trib/store"
   "strings"
   "sort"
-  // "strconv"
+  "strconv"
 )
 
 type keeper struct{
@@ -48,6 +48,7 @@ type localKeeper struct{
 	remoteKeepers []keeper
 	backends      []backend
 	errChan       chan error
+	replicators   map[int]int
 }
 
 //This is tthe place where we send heart beats to remote keepers
@@ -126,46 +127,37 @@ func (self *localKeeper) clockManager(){
 
 //This is the function that handles replication of master/slaves
 func (self *localKeeper) replicationManager(){
-	/*
-			Keeper polling log from backend
-	*/
-	go func() {
 		//This maps indexes of the backends struct list to index
-		primary_back_replica_mapping := make(map[int]int)
-
 		for {
 			time.Sleep(1 * time.Millisecond)
-			for k,v := range primary_back_replica_mapping {
-				var rawList trib.List
+			for p,r := range self.replicators {
+
 				//TODO: instead of creaing a new client we should use the back list we have created earlier,
 				//TODO:  we really don't need the primary_back_replica_mapping map
 				//TODO: HERE IS THE CLIENT IN THE STRUCT: backend_structs_list[0].store.Get
 				//TODO: We should mark the lower bound replica/lower bound master on the backends here
-				primary := NewClient(k)
-				replica := NewClient(v)
-				// _,_,_ = primary,replica, rawList
+				primary := self.backends[p]
+				replica := self.backends[r]
 
-				err := primary.ListGet(LogKey,&rawList)
+				var rawLog trib.List
+				err := primary.ListGet(LogKey,&rawLog)
+				//TODO:Check if replicator is down
 				if err!=nil{
-					//placeholder
+					//TODO:In this event we need to promote the replicator to be primary
 				}
-				for _,cmd := range rawList.L{
-					//RPC call
-					//Set  ListAppend  ListRemove
-					// func ExtractCmd(cmd string) (string, *trib.KeyValue, error){
+				for _,cmd := range rawLog.L{
 					var n int
-					replicaErr := execute(replica,cmd)
-
-					if replicaErr == nil{
+					err = execute(replica,cmd)
+					if err != nil {
+						//TODO:In this condition we need to find a new replicator
+					}else{
 						//execute on the primary
-						primaryErr := execute(primary,cmd)
-
-
-						if primaryErr != nil{
-							//remove log
+						err = execute(primary,cmd)
+						if err != nil {
+							//TODO:In this condition we need to promote the replicator to be primary
+						}else{
 							log_kv := trib.KV(LogKey, cmd)
 							err = primary.ListRemove(log_kv, &n)
-							//client will be unblocked
 							//TODO: Add results log?
 
 							if n!=1{
@@ -181,7 +173,7 @@ func (self *localKeeper) replicationManager(){
 				}//end cmd list loop
 			} //end k,v for loop
 		}// end for loop
-	}()
+	}
 
 }
 
@@ -197,15 +189,6 @@ func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) erro
 	//TODO: we then need to send what our lower bound is.
 }
 
-
-// Creates an RPC client that connects to a keeper.
-func NewKeeperConnection(addr string) keeperCommunicate {
-  return &keeper{Addr:addr}
-}
-
-type keeperCommunicate interface{
-
-}
 
 func ServeKeeper(kc *trib.KeeperConfig) error {
 
@@ -236,7 +219,8 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		this_keeper.Hash,
 		keeper_structs_list,
 		backend_structs_list,
-		errChan}
+		errChan,
+		make(map[int]int)}
 
 	go keeper.pingNeighbor()
 	go keeper.backendManager()
@@ -250,15 +234,17 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   return err
 }
 
-func execute(backend trib.Storage, cmd string) error{
+func execute(backend trib.Storage, cmd string) (string,error){
   op, kv, err := ExtractCmd(cmd)
 	if err != nil { return err }
   var succ bool
   var err error
   var n int
+	var response string
   switch op{
     case "Set":
         err = backend.Set(kv,&succ)
+				response = strconv.succ
     case "ListAppend":
         err = backend.ListAppend(kv, &succ)
     case "ListRemove":
