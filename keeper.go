@@ -385,18 +385,37 @@ func (self *localKeeper) backendManager(){
 	//Run forever and ever
 	for {
 		for i,back := range self.backends{
-			//If it's marked as up, we don't care about it
-			if back.up || !self.inRange(back.hash){
-				continue
+			var mlbS, rlbS string
+			err1 := back.store.Get(MasterKeyLB, &mlbS)
+			err2 := back.store.Get(ReplicKeyLB, &rlbS)
+
+			var mlb, rlb int
+			var up bool
+			if err1 == nil && err2 == nil{
+				mlb = strconv.Atoi(mlbS)
+				rlb = strconv.Atoi(rlbS)
+				up = true
+			}else{
+				mlb = -1
+				rlb = -1
+				up  = false
 			}
-			var res string
-			err := back.store.Get(MasterKeyLB, &res)
-			//This server is up now
-			if err == nil{
+
+			if back.up != up || back.mlb != mlb || back.rlb != rlb {
 				self.replicatorLock.Lock()
-				self.serverJoin(i)
+				if back.up == false && up == true && self.inRange(back.hash){
+					//If we are a manager of this we need to make it join, this will change the server side mlb/rlb
+					self.serverJoin(i)
+					_ := back.store.Get(MasterKeyLB, &mlbS)
+					_ := back.store.Get(ReplicKeyLB, &rlbS)
+				}
+				self.backends[i].up  = up
+				self.backends[i].mlb = mlb
+				self.backends[i].rlb = rlb
+
 				self.replicatorLock.Unlock()
 			}
+
 		}
 	}
 }
