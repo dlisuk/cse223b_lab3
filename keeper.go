@@ -7,11 +7,14 @@ import (
   "log"
   "trib/store"
   "strings"
+  "sort"
   // "strconv"
 )
 
 type keeper struct{
   Addr string
+  This int
+  Hash uint64
   Connection *rpc.Client
 }
 
@@ -89,10 +92,10 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   keeper_addrs := make([]string, len(kc.Addrs)-1)
   // keeper_index := kc.This
   this_address := ""
-  // addr_mapping := make(map[string]trib.Storage)
-
-  keeper_addr_hash_mapping := make(map[uint64]string)
-  back_addr_hash_mapping := make(map[uint64]string)
+  // backend structs list
+  backend_structs_list := make([]backend, 0, len(kc.Backs))
+  // keeper structs list
+  keeper_structs_list := make([]keeper, 0, len(kc.Addrs))
 
   primary_back_replica_mapping := make(map[string]string)
 
@@ -106,6 +109,23 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
     keeper_addrs[j] = kc.Addrs[i]
     j++
   }
+
+  //create keeper structs list
+  for i := range kc.Addrs{
+    keeper_structs_list = append(keeper_structs_list, keeper{Addr: kc.Addrs[i], This: i, Hash: HashBinKey(kc.Backs[i]), Connection: nil })
+  }
+
+  sort.Sort(keeperByHash(keeper_structs_list))
+  log.Println(keeper_structs_list)
+
+  //create backend structs list
+  for i := range kc.Backs{
+    backend_structs_list = append(backend_structs_list, backend{addr: kc.Backs[i], hash: HashBinKey(kc.Backs[i]), store: NewClient(kc.Backs[i])})
+  }
+
+  sort.Sort(byHash(backend_structs_list))
+  log.Println(backend_structs_list)
+
 
   //create a new keeper back
   // Addr  string       listen address
@@ -122,49 +142,10 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   }()
 
 
-
-  backs :=  make([]trib.Storage, 0, len(kc.Backs))
-  for i := range kc.Backs{
-    backs = append(backs, NewClient(kc.Backs[i]))
-  }
-
-
-
   //calculate current keeper's hash
   keeper_hash := HashBinKey(this_address)
   log.Print("current keeper's hash --->", keeper_hash)
 
-  //calculate all keeper's hash & ip address mapping
-  for i := range kc.Addrs {
-    keeper_addr_hash_mapping[HashBinKey(kc.Addrs[i])] = kc.Addrs[i]
-  }
-
-  //calculate all backend's hash & ip address mapping
-  for i := range kc.Backs{
-    back_addr_hash_mapping[HashBinKey(kc.Backs[i])] = kc.Backs[i]
-  }
-
-  //sort backend address hash
-  back_addr_hash_pair_list := sortBackAddrByHash(back_addr_hash_mapping)
-  log.Print("backend primary hash and ip address mapping --->", back_addr_hash_pair_list)
-
-  //establish replica mapping
-  len_hash_pair := len(back_addr_hash_pair_list)
-  i := 0
-  //primary_back_replica_mapping : [primary ip, replica ip]
-  for ; i < len_hash_pair - 1
-  {
-    primary_back_replica_mapping[back_addr_hash_pair_list[i].Address] = back_addr_hash_pair_list[i+1].Address
-    i += 1
-  }
-  //hook up the tail with the head
-  primary_back_replica_mapping[back_addr_hash_pair_list[len_hash_pair - 1].Address] = back_addr_hash_pair_list[0].Address
-  log.Print("backend primary and its replica ip address mapping --->", primary_back_replica_mapping)
-
-  // backend ip address & backend instance mapping
-  // for _, addr := range kc.Backs {
-  //  addr_mapping[addr] = NewClient(addr)
-  // }
 
   if kc.Ready != nil { go func(ch chan<- bool) { ch <- true } (kc.Ready) }
 
@@ -185,9 +166,8 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 
     num_of_alive_keeper = 0
 
-    for i, addr := range kc.Addrs {
-      keeper_conn := keeper{addr,nil}
-      _, err := keeper_conn.getConnection()
+    for i, keeper := range keeper_structs_list {
+      _, err := keeper.getConnection()
       if err == nil{
         //handle keeper up
         //count ++
@@ -207,10 +187,11 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   go func(tick <-chan time.Time, master chan bool){
     for {
       _ = <- tick
+      // some <- master
       <- master
       go func() {
         log.Println("clock is being synced")
-        for i := range backs {
+        for i := range backend_structs_list {
           go func(back trib.Storage) {
             var ret uint64
             err := back.Clock(highest, &ret)
@@ -218,10 +199,10 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
                 errChan <- err
             }
             seenClocks <- ret
-          }(backs[i])
+          }(backend_structs_list[i].store)
         }
         var maxClock uint64
-        for _ = range backs {
+        for _ = range backend_structs_list {
           nextClock := <-seenClocks
           if nextClock > maxClock{
               maxClock = nextClock
@@ -263,6 +244,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
           if replicaErr == nil{
             //execute on the primary
             primaryErr := execute(primary,cmd)
+
 
             if primaryErr != nil{
               //remove log
