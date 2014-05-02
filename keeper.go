@@ -278,9 +278,9 @@ func (self *localKeeper) serverCrash(index int){
 	go self.copy(newMasterInd,newSlaveInd, back.mlb, back.hash, copy1ch)
 	go func(){
 		var succ bool
-		_ := <- copy1ch
+		_ = <- copy1ch
 		//The new slave is now officially a slave
-		_ := newSlave.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.mlb)), &succ)
+		_ = newSlave.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.mlb)), &succ)
 		allDoneCh <- true
 	}()
 
@@ -289,7 +289,7 @@ func (self *localKeeper) serverCrash(index int){
 	go self.copy(back.replicates, newMasterInd, back.rlb, back.mlb, copy2ch)
 	go func(){
 		var succ bool
-		_ := <- copy2ch
+		_ = <- copy2ch
 		//The new master is now officially a slave to the old master's master
 		_ = newMaster.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.rlb)), &succ)
 		allDoneCh <- true
@@ -346,14 +346,14 @@ func (self *localKeeper) serverJoin(index int){
 
 	var passed bool
 	//Step 0
-	_ := succ.store.Set(trib.KV(ReplicKeyLB,strconv.Itoa(succ.mlb)), &passed)
+	_ = succ.store.Set(trib.KV(ReplicKeyLB,strconv.Itoa(succ.mlb)), &passed)
 	//Step 1
-	_ := succ.store.Set(trib.KV(MasterKeyLB,strconv.Itoa(joined_server.hash)), &passed)
+	_ = succ.store.Set(trib.KV(MasterKeyLB,strconv.Itoa(joined_server.hash)), &passed)
 	//Step 2
 	//TODO: FLUSH LOG OF SUCC , this has to block
 
 	//Step 3
-	_ := joined_server.store.Set(trib.KV(MasterKeyLB,strconv.Itoa(succ.mlb)), &passed)
+	_ = joined_server.store.Set(trib.KV(MasterKeyLB,strconv.Itoa(succ.mlb)), &passed)
 
 
   //First we want to initiate the copies since they are long running and can be backgrounded
@@ -362,13 +362,13 @@ func (self *localKeeper) serverJoin(index int){
 	//Step 4
   go self.copy(succInd,index, pred.mlb,  joined_server.hash, copy1ch)
   go func(){
-    _ := <- copy1ch
+    _ = <- copy1ch
 		//Step 5
-		_ := joined_server.store.Set(trib.KV(ReplicKeyLB,strconv.Itoa(succ.rlb)), &passed)
+		_ = joined_server.store.Set(trib.KV(ReplicKeyLB,strconv.Itoa(succ.rlb)), &passed)
     allDoneCh <- true
   }()
 
-	_ := <- allDoneCh
+	_ = <- allDoneCh
 
 }
 
@@ -415,7 +415,7 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bo
   }
 
   //copy all the kv pair
-  var list trib.List
+  // var list trib.List
   err = source.store.Keys(p,&list)
   if err!=nil{return err}
   for key := range list.L{
