@@ -5,10 +5,10 @@ import (
   "time"
   "net/rpc"
   "log"
-  "trib/store"
   "strings"
   "sort"
   "strconv"
+	"errors"
 )
 
 type remoteKeeper struct{
@@ -22,7 +22,7 @@ func (self *remoteKeeper) HeartBeat(senderHash uint64, responseHash *uint64) err
     c, err := self.getConnection()
     if c != nil {
         //set the responseHash
-        responseHash = self.Hash
+        responseHash = &self.Hash
         return nil
     }
     if err != nil && err == rpc.ErrShutdown{
@@ -58,7 +58,7 @@ func (self *remoteKeeper) getConnection() (*rpc.Client, error) {
 type localKeeper struct{
 	hash          uint64
 	lowerBound    uint64
-	remoteKeepers []keeper
+	remoteKeepers []remoteKeeper
 	backends      []backend
 	errChan       chan error
 	replicators   map[int]int
@@ -145,12 +145,10 @@ func (self *localKeeper) replicationManager(){
 			time.Sleep(1 * time.Millisecond)
 			for p,r := range self.replicators {
 
-				//TODO: instead of creaing a new client we should use the back list we have created earlier,
-				//TODO:  we really don't need the primary_back_replica_mapping map
 				//TODO: HERE IS THE CLIENT IN THE STRUCT: backend_structs_list[0].store.Get
 				//TODO: We should mark the lower bound replica/lower bound master on the backends here
-				primary := self.backends[p]
-				replica := self.backends[r]
+				primary := self.backends[p].store
+				replica := self.backends[r].store
 
 				var rawLog trib.List
 				err := primary.ListGet(LogKey,&rawLog)
@@ -187,8 +185,6 @@ func (self *localKeeper) replicationManager(){
 			} //end k,v for loop
 		}// end for loop
 	}
-
-}
 
 //This is the function that figures out when backends come up/go down and handles copying of all data from one backend to annother
 func (self *localKeeper) backendManager(){
@@ -249,26 +245,26 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 
 func execute(backend trib.Storage, cmd string) (string,error){
   op, kv, err := ExtractCmd(cmd)
-	if err != nil { return err }
-  var succ bool
-  var err error
-  var n int
-	var response string
+	if err != nil { return "",err }
+
+	response := ""
   switch op{
     case "Set":
-        err = backend.Set(kv,&succ)
-				response = strconv.succ
+			var succ bool
+			err = backend.Set(kv,&succ)
+			response = strconv.FormatBool(succ)
     case "ListAppend":
-        err = backend.ListAppend(kv, &succ)
+			var succ bool
+			err = backend.ListAppend(kv, &succ)
+			response = strconv.FormatBool(succ)
     case "ListRemove":
-        err = backend.ListRemove(kv, &n)
+			var n int
+			err = backend.ListRemove(kv, &n)
+			response = strconv.FormatInt(int64(n),10)
+		default:
+			err = errors.New("Undefined operation: " + op)
   }
-
-  if err != nil{
-    return err
-  }
-
-  return nil
+	return response,err
 }
 
 
