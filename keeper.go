@@ -83,11 +83,14 @@ func (v rkByHash) Len() int { return len(v) }
 func (v rkByHash) Swap(i, j int) { v[i], v[j] = v[j], v[i] }
 func (v rkByHash) Less(i, j int) bool { return v[i].hash < v[j].hash }
 type backendKeeper struct{
-	addr      string
-	hash      uint64
-	store     trib.Storage
+	addr       string
+	hash       uint64
+	store      trib.Storage
 	replicator int
-	up        bool
+	replicates int
+	mlb        uint64
+	rlb        uint64
+	up         bool
 }
 
 func (self *localKeeper) inRange(x uint64) bool{
@@ -257,7 +260,15 @@ func (self *localKeeper) replicationManager(){
 func (self *localKeeper) serverCrash(index int){
 	//Caller must have locked the replicator lock
 	//TODO: Here we need to figure out what to do when a server goes down, make sure it's replicator can take over/such
+	back := self.backends[index]
+	//We don't care if this backup is  down, someone else must have dealt with it
+	if !back.up{
+		return
+	}
 	self.backends[index].up = false
+
+	rlb = self.backends[back.replicates].hash
+	mlb = self.backends[back.replicates].replicates
 }
 func (self *localKeeper) serverJoin(index int){
 	//Caller must have locked the replicator lock
@@ -345,7 +356,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   //create backend structs list
   backend_structs_list := make([]backendKeeper, 0, len(kc.Backs))
   for i := range kc.Backs{
-    backend_structs_list = append(backend_structs_list, backendKeeper{addr: kc.Backs[i], hash: HashBinKey(kc.Backs[i]), store: NewClient(kc.Backs[i]), replicator:-1, up:false})
+    backend_structs_list = append(backend_structs_list, backendKeeper{addr: kc.Backs[i], hash: HashBinKey(kc.Backs[i]), store: NewClient(kc.Backs[i]), replicator:-1, replicates:-1, up:false})
   }
 	sort.Sort(rkByHash(backend_structs_list))
 	log.Println("backend structs list --->", backend_structs_list)
