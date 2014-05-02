@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"errors"
+	//"log"
 )
 
 func HashBinKey(word string) uint64{
@@ -47,7 +48,7 @@ func (self *binClient) Bin(name string) trib.Storage{
 	if ind == -1 || ind == len(self.backs) {
 		ind = 0
 	}
-	return NewProxy(name,self.backs[ind].store)
+	return NewBinStorageProxy(name, self.backs)// NewProxy(name,self.backs[ind].store)
 }
 
 type backend struct{
@@ -67,7 +68,7 @@ func NewBinStorageProxy(bin string, backs []backend) trib.Storage {
 		backends = append(backends, backend{
 				b.addr,
 				b.hash,
-				NewProxy(bin, b.store)})
+				b.store})
 	}
 
 	return &binStorageProxy{
@@ -86,6 +87,7 @@ func (self *binStorageProxy) checkBackend(back *backend) bool{
 	err := store.Get(MasterKeyLB, &result)
 	if err != nil{ return false }
 	masterlb, err := strconv.ParseUint(result,10,64)
+	//log.Println(err)
 	if err != nil{ return false }
 
 	if masterlb < self.bin_hash && self.bin_hash <= back.hash || back.hash < masterlb && (self.bin_hash <= back.hash || masterlb < self.bin_hash ){
@@ -95,22 +97,28 @@ func (self *binStorageProxy) checkBackend(back *backend) bool{
 	}
 }
 
-func (self *binStorageProxy) findBackend() *backend{
+func (self *binStorageProxy) findBackend() trib.Storage{
 	if self.checkBackend(self.bin_back){
-		return self.bin_back
+		return NewProxy(self.bin,self.bin_back.store)
 	}else{
 		self.bin_back = nil
 	}
+	//log.Print(self.bin_back)
+	//log.Print("|")
 	for self.bin_back == nil{
 		for _, back := range self.all_backs{
+			//log.Print(back.addr)
 			if self.checkBackend(&back){
+				//log.Print("OK")
 				self.bin_back = &back
 			}
+			//log.Print("|")
 		}
 	}
-	return self.bin_back
+	//log.Println( self.bin_back.addr)
+	return NewProxy(self.bin,self.bin_back.store)
 }
-
+//
 type binStorageProxy struct{
 	bin       string
 	bin_hash  uint64
@@ -122,7 +130,7 @@ func (self *binStorageProxy) Get(key string, value *string) error{
 	err  := errors.New("FILLER")
 	for err != nil{
 		back := self.findBackend()
-		err   = back.store.Get(key,value)
+		err   = back.Get(key,value)
 	}
 	return nil
 }
@@ -131,7 +139,7 @@ func (self *binStorageProxy) Set(kv *trib.KeyValue, succ *bool) error{
 	err  := errors.New("FILLER")
 	for err != nil{
 		back := self.findBackend()
-		err   = back.store.Set(kv,succ)
+		err   = back.Set(kv,succ)
 	}
 	return nil
 }
@@ -141,7 +149,7 @@ func (self *binStorageProxy) Keys(p *trib.Pattern, list *trib.List) error{
 	err  := errors.New("FILLER")
 	for err != nil{
 		back := self.findBackend()
-		err   = back.store.Keys(p,list)
+		err   = back.Keys(p,list)
 	}
 	return nil
 }
@@ -151,7 +159,7 @@ func (self *binStorageProxy) ListGet(key string, list *trib.List) error{
 	err  := errors.New("FILLER")
 	for err != nil{
 		back := self.findBackend()
-		err   = back.store.ListGet(key,list)
+		err   = back.ListGet(key,list)
 	}
 	return nil
 }
@@ -160,7 +168,7 @@ func (self *binStorageProxy) ListAppend(kv *trib.KeyValue, succ *bool) error{
 	err  := errors.New("FILLER")
 	for err != nil{
 		back := self.findBackend()
-		err   = back.store.ListAppend(kv,succ)
+		err   = back.ListAppend(kv,succ)
 	}
 	return nil
 }
@@ -169,7 +177,7 @@ func (self *binStorageProxy) ListRemove(kv *trib.KeyValue, n *int) error{
 	err  := errors.New("FILLER")
 	for err != nil{
 		back := self.findBackend()
-		err   = back.store.ListRemove(kv,n)
+		err   = back.ListRemove(kv,n)
 	}
 	return nil
 }
@@ -179,7 +187,7 @@ func (self *binStorageProxy) ListKeys(p *trib.Pattern, list *trib.List) error{
 	err  := errors.New("FILLER")
 	for err != nil{
 		back := self.findBackend()
-		err   = back.store.ListKeys(p,list)
+		err   = back.ListKeys(p,list)
 	}
 	return nil
 }
@@ -188,7 +196,7 @@ func (self *binStorageProxy) Clock(atLeast uint64, ret *uint64) error{
 	err  := errors.New("FILLER")
 	for err != nil{
 		back := self.findBackend()
-		err   = back.store.Clock(atLeast,ret)
+		err   = back.Clock(atLeast,ret)
 	}
 	return nil
 }

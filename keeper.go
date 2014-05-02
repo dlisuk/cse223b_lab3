@@ -4,7 +4,7 @@ import (
   "trib"
   "time"
   "net/rpc"
-  "log"
+  //"log"
   "strings"
   "sort"
   "strconv"
@@ -23,22 +23,14 @@ type remoteKeeper struct{
 }
 
 func (self *remoteKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error {
-    c, err := self.getConnection()
-    if err != nil && err == rpc.ErrShutdown{
-      log.Println("there's an error")
-        return err
-    }
-    if c != nil {
-        //set the responseHash
-
-         //Local Heartbeat:  func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error{
-        log.Println("connection is good")
-        err = c.Call("LocalKeeper.HeartBeat",senderHash,responseHash)
-
-        return err
-    }else{log.Println("connection failed")}
-
-    return nil
+	c, err := self.getConnection()
+	if c != nil {
+		err = c.Call("LocalKeeper.HeartBeat",senderHash,responseHash)
+	}
+	if err != nil && err == rpc.ErrShutdown{
+		self.Connection = nil
+	}
+	return err
 }
 
 func NewRemoteKeeper(addr string, this int) *remoteKeeper{
@@ -58,7 +50,7 @@ func (self *remoteKeeper) getConnection() (*rpc.Client, error) {
 		c, err = rpc.DialHTTP("tcp", self.Addr)
 		self.Connection = c
 		if err != nil && strings.Contains(err.Error(), "connection refused") {
-			return nil, nil
+			return nil, err
 		}
 		if err != nil {
 			return nil, err
@@ -98,7 +90,7 @@ type backendKeeper struct{
 func (self *localKeeper) inRange(x uint64) bool{
 	lb := self.lowerBound < x
 	ub := x <= self.hash
-	return lb && ub || (self.hash <= self.lowerBound && (lb || ub))
+	return lb && ub || (self.hash < self.lowerBound && (lb || ub))
 }
 
 //This is tthe place where we send heart beats to remote keepers
@@ -106,19 +98,22 @@ func (self *localKeeper) pingNeighbor(){
 
     neighborIndex := (self.index +1)%len(self.remoteKeepers)
 
-    for{
-        if neighborIndex == self.index{
-            break;
-        }
-        remoteKeeper := self.remoteKeepers[neighborIndex]
-        var responseHash uint64
-        err := remoteKeeper.HeartBeat(self.hash, &responseHash)
-        if err != nil{
-            neighborIndex = (neighborIndex+1)%len(self.remoteKeepers)
-        }else{
-            break
-        }
-    }
+	for {
+		for {
+			if neighborIndex == self.index {
+				break;
+			}
+			remoteKeeper := self.remoteKeepers[neighborIndex]
+			var responseHash uint64
+			err := remoteKeeper.HeartBeat(self.hash, &responseHash)
+			if err != nil {
+				neighborIndex = (neighborIndex+1)%len(self.remoteKeepers)
+			}else {
+				break
+			}
+		}
+		time.Sleep(time.Second)
+	}
 }
 
 //This is the function which calls the clock on all the backends if we are the master
@@ -145,7 +140,7 @@ func (self *localKeeper) clockManager(){
         //handle keeper up
         //count ++
         //check the keeper's index with my index
-        log.Println("responseHash", *responseHash)
+        //log.Println("responseHash", *responseHash)
         if *responseHash < minimumHash {
           minimumHash = *responseHash
         }
@@ -169,12 +164,13 @@ func (self *localKeeper) syncClock(){
       switch self.masterFlag{
         case true:
           go func() {
+						//log.Println("Syncing clock " + strconv.Itoa(self.index))
             for i := range self.backends {
               go func(back trib.Storage) {
                 var ret uint64
                 err := back.Clock(highest, &ret)
                 if err != nil && err != rpc.ErrShutdown{
-                  self.errChan <- err
+                  //self.errChan <- err
                 }
                 seenClocks <- ret
               }(self.backends[i].store)
@@ -204,24 +200,24 @@ func (self *localKeeper) replicationManager(){
 
 	//This maps indexes of the backends struct list to index
 	for {
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(time.Second)
 		
 		self.replicatorLock.Lock()
 		PR_Loop: for p,p_back := range self.backends {
 			if p_back.up == false || !self.inRange(p_back.hash){
 				continue
 			}
+			//log.Println(strconv.FormatUint(self.lowerBound,10) + "-" + strconv.FormatUint(self.hash,10) + " is replicationg " + strconv.FormatUint(p_back.hash,10))
+
 			// log.Println("replicationManager at work")
 			primary := p_back.store
 			r       := p_back.replicator
+
 			replica := self.backends[r].store
 
 			var rawLog trib.List
 			err := primary.ListGet(LogKey,&rawLog)
 			// log.Println("The log is : ", len(rawLog.L))
-			for i,l := range rawLog.L{
-				log.Println("log ",i," = ",l)
-			}
 			if err!=nil{
 				self.serverCrash(p)
 				break PR_Loop
@@ -270,9 +266,10 @@ func (self *localKeeper) replicationManager(){
 
 
 func (self *localKeeper) serverCrash(index int){
-	log.Println("SERVER CRASH " + strconv.Itoa(index))
+	//log.Println("SERVER CRASH " + strconv.Itoa(index))
 	//Caller must have locked the replicator lock
 	back := self.backends[index]
+	//log.Println("CRASH ON " + back.addr)
 	newMasterInd := back.replicator
 	newMaster    := self.backends[newMasterInd]
 	newSlaveInd  := newMaster.replicator
@@ -284,6 +281,7 @@ func (self *localKeeper) serverCrash(index int){
 	//Step 0
 	//the new master can immediatly be the master, accept issueing but not committing commands
 	_ = newMaster.store.Set(trib.KV(MasterKeyLB, strconv.FormatUint(back.mlb,10)), &succ)
+	//log.Println(newMaster.addr + " is now master " + strconv.FormatUint(back.mlb,10))
 
 	//First we want to initiate the copies since they are long running and can be backgrounded
 	//crashed server master data -> new slave
@@ -294,6 +292,7 @@ func (self *localKeeper) serverCrash(index int){
 		_ = <- copy1ch
 		//The new slave is now officially a slave
 		_ = newSlave.store.Set(trib.KV(ReplicKeyLB, strconv.FormatUint(back.mlb,10)), &succ)
+		//log.Println(newSlave.addr + " is now slave1 " + strconv.FormatUint(back.mlb,10))
 		allDoneCh <- true
 	}()
 
@@ -305,15 +304,17 @@ func (self *localKeeper) serverCrash(index int){
 		_ = <- copy2ch
 		//The new master is now officially a slave to the old master's master
 		_ = newMaster.store.Set(trib.KV(ReplicKeyLB, strconv.FormatUint(back.rlb,10)), &succ)
+		//log.Println(newMaster.addr + " mis now slave " + strconv.FormatUint(back.rlb,10))
 		allDoneCh <- true
 	}()
 
 	_ = <- allDoneCh
 	_ = <- allDoneCh
+	//log.Println("SERVER Done " + strconv.Itoa(index))
 }
 
 func (self *localKeeper) serverJoin(index int){
-	log.Println("SERVER Join " + strconv.Itoa(index))
+	//log.Println("SERVER Join " + strconv.Itoa(index))
 	//Caller must have locked the replicator lock
 	//TODO: Here we need to figure out what to do when a server comes up, make sure it's replicator can take over/such
 
@@ -348,12 +349,19 @@ func (self *localKeeper) serverJoin(index int){
 		}
 	}
 	if succInd == -1 || predInd == -1{
+		//log.Println("FAILURE")
 		return
 	}
 
-	pred 					:= self.backends[predInd]
-	joined_server := self.backends[index]
-	succ 					:= self.backends[succInd]
+	pred 					:= &self.backends[predInd]
+	joined_server := &self.backends[index]
+	succ 					:= &self.backends[succInd]
+
+	joined_server.replicates = predInd
+	joined_server.replicator = succInd
+
+	pred.replicator = index
+	succ.replicates = index
 
 
   allDoneCh := make(chan bool)
@@ -384,6 +392,7 @@ func (self *localKeeper) serverJoin(index int){
 
 	_ = <- allDoneCh
 
+	//log.Println("SERVER Join DONE" + strconv.Itoa(index))
 }
 
 func (self *localKeeper) binInRange(lb uint64, ub uint64, key string) bool{
@@ -476,6 +485,10 @@ func (self *localKeeper) backendManager(){
 					_ = back.store.Get(MasterKeyLB, &mlbS)
 					_ = back.store.Get(ReplicKeyLB, &rlbS)
 				}
+				if back.up == true && up == false && self.inRange(back.hash){
+					//If we are a manager of this we need to make it join, this will change the server side mlb/rlb
+					self.serverCrash(i)
+				}
 				self.backends[i].up  = up
 				self.backends[i].mlb = mlb
 				self.backends[i].rlb = rlb
@@ -493,13 +506,13 @@ func (self *localKeeper) backendManager(){
 func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error{
 	//TODO: we need to use the senderHash to figure out if we need to change our lower bound.
 	//TODO: we then need to send what our lower bound is.
-    log.Println("localKeeper Heartbead")
     if self.lowerBound == senderHash {
         //do nothing
     }else {
+				//log.Printf("Recieved " + strconv.FormatUint(senderHash,10) + " on " + strconv.FormatUint(self.hash,10))
         self.lowerBound = senderHash
     }
-    *responseHash = self.lowerBound
+    *responseHash = self.hash
     return nil
 }
 
@@ -511,6 +524,7 @@ func (self *localKeeper) keeperServer() error {
     if err != nil{
         return err
     }
+		//log.Println("Keeper Serving")
     return http.Serve(listener, s)
 
 }
@@ -524,15 +538,19 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	var this_keeper *remoteKeeper
     var this_index int
   for i := range kc.Addrs{
-    keeper_structs_list = append(keeper_structs_list, remoteKeeper{Addr: kc.Addrs[i], This: i, Hash: HashBinKey(kc.Backs[i]), Connection: nil })
+    keeper_structs_list = append(keeper_structs_list, remoteKeeper{Addr: kc.Addrs[i], This: i, Hash: HashBinKey(kc.Addrs[i]), Connection: nil })
 		if(i == kc.This){
 			this_keeper = &keeper_structs_list[i]
             this_index = i
 		}
   }
   sort.Sort(keeperByHash(keeper_structs_list))
-  log.Println("keeper structs list --->", keeper_structs_list)
-  log.Println("current keeper --->", this_keeper)
+	for i := range keeper_structs_list{
+		keeper_structs_list[i].This = i
+	}
+	this_index = this_keeper.This
+	//log.Println("keeper structs list --->", keeper_structs_list)
+	//log.Println("current keeper --->", this_keeper)
 
   //create backend structs list
   backend_structs_list := make([]backendKeeper, 0, len(kc.Backs))
@@ -549,7 +567,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 				up:false})
   }
 	sort.Sort(rkByHash(backend_structs_list))
-	log.Println("backend structs list --->", backend_structs_list)
+	//log.Println("backend structs list --->", backend_structs_list)
 	errChan := make(chan error)
 	masterClock := false
 
@@ -563,8 +581,8 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		masterClock,
 		make(map[int]int),
 		sync.Mutex{} }
-	log.Println("local keeper")
-	log.Println(keeper)
+	//log.Println("local keeper")
+	//log.Println(keeper)
 
 	//We don't want to continue until at least 3 backends are up
 
@@ -597,43 +615,52 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		}
 	}
 	for i,b := range upKeepers{
-		pred := i -1
+		pred := i - 1
 		if pred < 0 {pred = len(upKeepers)-1}
-		succ := i +1
+		predpred := pred -1
+		if predpred < 0 {predpred = len(upKeepers)-1}
+		succ := i + 1
 		if len(upKeepers) <= succ  {succ = 0}
 		pred = upKeepers[pred]
 		succ = upKeepers[succ]
-		keeper.backends[b].replicator = pred
+		keeper.backends[b].replicates = pred
 		keeper.backends[b].mlb        = keeper.backends[pred].hash
-		keeper.backends[b].replicates = succ
-		keeper.backends[b].rlb        = keeper.backends[succ].hash
+		keeper.backends[b].replicator = succ
+		keeper.backends[b].rlb        = keeper.backends[predpred].hash
 		keeper.backends[b].store.Set(trib.KV(MasterKeyLB,strconv.FormatUint(keeper.backends[b].mlb,10)),nil)
 		keeper.backends[b].store.Set(trib.KV(ReplicKeyLB,strconv.FormatUint(keeper.backends[b].rlb,10)),nil)
+		/*log.Println("ADDR: " + keeper.backends[b].addr)
+		log.Println(keeper.backends[b].replicates)
+		log.Println(keeper.backends[b].mlb)
+		log.Println(keeper.backends[b].replicator)
+		log.Println(keeper.backends[b].rlb)*/
+
 	}
 
 	//start the keeper server
 	go keeper.keeperServer()
+	time.Sleep(2*time.Second)
 
 	if(len(keeper.remoteKeepers) > 1) {
-		log.Println("start ping neighbor")
+		//log.Println("start ping neighbor")
 		go keeper.pingNeighbor()
 	}else{
 		keeper.masterFlag = true
 	}
-  log.Println("start running backend manager")
+  //log.Println("start running backend manager")
 	go keeper.backendManager()
-  log.Println("start running replication manager")
+  //log.Println("start running replication manager")
 	go keeper.replicationManager()
 
 
-  log.Println("start clock manager")
-  go keeper.clockManager()
+  //log.Println("start clock manager")
+  //keeper.clockManager()
 
-  log.Println("start master clock daemon")
+  //log.Println("start master clock daemon")
   go keeper.syncClock()
 
-	log.Println("local keeper")
-	log.Println(keeper)
+	//log.Println("local keeper")
+	//log.Println(keeper)
 
   if kc.Ready != nil { go func(ch chan<- bool) { ch <- true } (kc.Ready) }
 
