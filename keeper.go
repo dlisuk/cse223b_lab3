@@ -25,16 +25,18 @@ type remoteKeeper struct{
 func (self *remoteKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error {
     c, err := self.getConnection()
     if err != nil && err == rpc.ErrShutdown{
+      log.Println("there's an error")
         return err
     }
     if c != nil {
         //set the responseHash
 
          //Local Heartbeat:  func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error{
+        log.Println("connection is good")
         err = c.Call("LocalKeeper.HeartBeat",senderHash,responseHash)
 
         return err
-    }
+    }else{log.Println("connection failed")}
 
     return nil
 }
@@ -137,11 +139,13 @@ func (self *localKeeper) clockManager(){
 
     for _, keeper := range self.remoteKeepers {
       responseHash := new(uint64)
+      *responseHash = uint64(1)
       err := keeper.HeartBeat(self.hash, responseHash)
       if err == nil{
         //handle keeper up
         //count ++
         //check the keeper's index with my index
+        log.Println("responseHash", *responseHash)
         if *responseHash < minimumHash {
           minimumHash = *responseHash
         }
@@ -390,7 +394,7 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done chan bool)
   //copy all the lists
   err := source.store.ListKeys(p, &list)
   if err!=nil{return err}
-    
+
   for _, key := range list.L{
     if !self.binInRange(lb,ub,key) || key == LogKey || key == ResLogKey || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
     	 continue
@@ -408,7 +412,7 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done chan bool)
         // //remove from the source
         // var n int
         // kv := trib.KV(key, list_item)
-        // err = source.store.ListRemove(kv, &n) 
+        // err = source.store.ListRemove(kv, &n)
         // if err!=nil{return nil}
       }
   }
@@ -479,6 +483,7 @@ func (self *localKeeper) backendManager(){
 func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error{
 	//TODO: we need to use the senderHash to figure out if we need to change our lower bound.
 	//TODO: we then need to send what our lower bound is.
+    log.Println("localKeeper Heartbead")
     if self.lowerBound == senderHash {
         //do nothing
     }else {
