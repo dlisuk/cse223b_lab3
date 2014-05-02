@@ -169,7 +169,6 @@ func (self *localKeeper) syncClock(){
       switch self.masterFlag{
         case true:
           go func() {
-            log.Println("clock is being synced")
             for i := range self.backends {
               go func(back trib.Storage) {
                 var ret uint64
@@ -642,15 +641,15 @@ func execute(backend trib.Storage, cmd string) (string,error){
 	if err != nil { return "",err }
 	response := ""
     switch op{
-    case "Set":
+    case "Storage.Set":
 			var succ bool
 			err = backend.Set(kv,&succ)
 			response = strconv.FormatBool(succ)
-    case "ListAppend":
+    case "Storage.ListAppend":
 			var succ bool
 			err = backend.ListAppend(kv, &succ)
 			response = strconv.FormatBool(succ)
-    case "ListRemove":
+    case "Storage.ListRemove":
 			var n int
 			err = backend.ListRemove(kv, &n)
 			response = strconv.FormatInt(int64(n),10)
