@@ -41,7 +41,7 @@ func (self *client) getConnection() (*rpc.Client, error) {
 		c, err = rpc.DialHTTP("tcp", self.addr)
 		self.connection = c
 		if err != nil && strings.Contains(err.Error(), "connection refused") {
-			return nil, nil
+			return nil, rpc.ErrShutdown
 		}
 		if err != nil {
 			return nil, err
