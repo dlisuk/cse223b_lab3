@@ -396,7 +396,10 @@ func (self *localKeeper) backendManager(){
 			if back.up != up || back.mlb != mlb || back.rlb != rlb {
 				self.replicatorLock.Lock()
 				if back.up == false && up == true && self.inRange(back.hash){
+					//If we are a manager of this we need to make it join, this will change the server side mlb/rlb
 					self.serverJoin(i)
+					_ := back.store.Get(MasterKeyLB, &mlbS)
+					_ := back.store.Get(ReplicKeyLB, &rlbS)
 				}
 				self.backends[i].up  = up
 				self.backends[i].mlb = mlb
