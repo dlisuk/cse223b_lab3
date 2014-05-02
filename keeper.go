@@ -96,7 +96,7 @@ type backendKeeper struct{
 func (self *localKeeper) inRange(x uint64) bool{
 	lb := self.lowerBound < x
 	ub := x <= self.hash
-	return lb && ub || (self.hash < self.lowerBound && (lb || ub))
+	return lb && ub || (self.hash <= self.lowerBound && (lb || ub))
 }
 
 //This is tthe place where we send heart beats to remote keepers
@@ -257,6 +257,8 @@ func (self *localKeeper) replicationManager(){
 }
 
 
+
+
 func (self *localKeeper) serverCrash(index int){
 	//Caller must have locked the replicator lock
 	back := self.backends[index]
@@ -334,7 +336,7 @@ func (self *localKeeper) serverJoin(index int){
 		}
 	}
 	if succInd == -1 || predInd == -1{
-		//TODO:What do we do here?
+		return
 	}
 
 	pred 					:= self.backends[predInd]
@@ -522,7 +524,16 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   //create backend structs list
   backend_structs_list := make([]backendKeeper, 0, len(kc.Backs))
   for i := range kc.Backs{
-    backend_structs_list = append(backend_structs_list, backendKeeper{addr: kc.Backs[i], hash: HashBinKey(kc.Backs[i]), store: NewClient(kc.Backs[i]), replicator:-1, replicates:-1, up:false})
+		hash := HashBinKey(kc.Backs[i])
+    backend_structs_list = append(
+			backend_structs_list,
+			backendKeeper{
+				addr: kc.Backs[i],
+				hash: hash,
+				store: NewClient(kc.Backs[i]),
+				replicator:-1,
+				replicates:-1,
+				up:false})
   }
 	sort.Sort(rkByHash(backend_structs_list))
 	log.Println("backend structs list --->", backend_structs_list)
@@ -539,9 +550,61 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		masterClock,
 		make(map[int]int),
 		sync.Mutex{} }
+	log.Println("local keeper")
+	log.Println(keeper)
 
-  log.Println("start ping neighbor")
-	go keeper.pingNeighbor()
+	//We don't want to continue until at least 3 backends are up
+
+	upBacks := 0
+	for upBacks < 3 {
+		log.Println("trying upBacks" + strconv.Itoa(upBacks))
+		for i,b := range keeper.backends {
+			var res string
+			if(b.up){
+				err := b.store.Get(MasterKeyLB,&res)
+				if err != nil{
+					keeper.backends[i].up = false
+					upBacks = upBacks -1
+				}
+			}else{
+				err := b.store.Get(MasterKeyLB,&res)
+				if err == nil{
+					keeper.backends[i].up = true
+					upBacks = upBacks + 1
+				}
+			}
+			log.Println(res)
+		}
+	}
+	log.Println(keeper.backends)
+	log.Println("trying upBacks" + strconv.Itoa(upBacks))
+
+	upKeepers := make([]int,0)
+	for i,b := range keeper.backends {
+		if b.up{
+			upKeepers = append(upKeepers, i)
+		}
+	}
+	for i,b := range upKeepers{
+		pred := i -1
+		if pred < 0 {pred = len(upKeepers)-1}
+		succ := i +1
+		if len(upKeepers) <= succ  {succ = 0}
+		pred = upKeepers[pred]
+		succ = upKeepers[succ]
+		keeper.backends[b].replicator = pred
+		keeper.backends[b].mlb        = keeper.backends[pred].hash
+		keeper.backends[b].replicates = succ
+		keeper.backends[b].rlb        = keeper.backends[succ].hash
+	}
+
+
+	if(len(keeper.remoteKeepers) > 1) {
+		log.Println("start ping neighbor")
+		go keeper.pingNeighbor()
+	}else{
+		keeper.masterFlag = true
+	}
   log.Println("start running backend manager")
 	go keeper.backendManager()
   log.Println("start running replication manager")
@@ -554,6 +617,8 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   log.Println("start master clock daemon")
   go keeper.syncClock()
 
+	log.Println("local keeper")
+	log.Println(keeper)
 
   if kc.Ready != nil { go func(ch chan<- bool) { ch <- true } (kc.Ready) }
 
