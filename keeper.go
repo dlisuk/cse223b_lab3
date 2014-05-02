@@ -31,7 +31,7 @@ func (self *remoteKeeper) HeartBeat(senderHash uint64, responseHash *uint64) err
         //set the responseHash
 
          //Local Heartbeat:  func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error{
-        err = c.Call("LocalKeeper.HeartBeat",senderHash,responseHash)      
+        err = c.Call("LocalKeeper.HeartBeat",senderHash,responseHash)
 
         return err
     }
@@ -42,9 +42,9 @@ func (self *remoteKeeper) HeartBeat(senderHash uint64, responseHash *uint64) err
 func NewRemoteKeeper(addr string, this int) *remoteKeeper{
     //compute hash
     hash := HashBinKey(addr)
-    return &remoteKeeper{Addr:addr, 
-                        This:this, 
-                        Hash:hash, 
+    return &remoteKeeper{Addr:addr,
+                        This:this,
+                        Hash:hash,
                         Connection:nil}
 }
 
@@ -101,8 +101,8 @@ func (self *localKeeper) inRange(x uint64) bool{
 
 //This is tthe place where we send heart beats to remote keepers
 func (self *localKeeper) pingNeighbor(){
-    
-    neighborIndex := (self.index +1)%len(self.remoteKeepers) 
+
+    neighborIndex := (self.index +1)%len(self.remoteKeepers)
 
     for{
         if neighborIndex == self.index{
@@ -310,6 +310,13 @@ func (self *localKeeper) serverJoin(index int){
 	//Caller must have locked the replicator lock
 	//TODO: Here we need to figure out what to do when a server comes up, make sure it's replicator can take over/such
 	self.backends[index].up = true
+
+  replicator := self.backends[back.replicator]
+  replicates := self.backends[back.replicates]
+
+  self.backends[index].mlb = self.backends[replicates].hash
+  self.backends[index].rlb = self.backends[replicator].rlb
+  self.backends[replicator].rlb = self.backends[index].mlb
 }
 
 func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bool) error{
