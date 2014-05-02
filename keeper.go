@@ -278,7 +278,7 @@ func (self *localKeeper) serverCrash(index int){
 	go func(){
 		var succ bool
 		//the new master can immediatly be the master, accept issueing but not committing commands
-		_ := newMaster.store.Set(trib.KV(MasterKeyLB, strconv.Itoa(back.mlb)), &succ)
+		_ = newMaster.store.Set(trib.KV(MasterKeyLB, strconv.Itoa(back.mlb)), &succ)
 		newMaster.mlb = back.mlb
 
 		_ := <- copy1ch
@@ -296,7 +296,7 @@ func (self *localKeeper) serverCrash(index int){
 		var succ bool
 		_ := <- copy2ch
 		//The new master is now officially a slave to the old master's master
-		_ := newMaster.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.rlb)), &succ)
+		_ = newMaster.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.rlb)), &succ)
 		newSlave.rlb = back.rlb
 		back.rlb = -1
 		allDoneCh <- true
@@ -333,14 +333,14 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bo
 	dest   := self.backends[d]
 
   p := trib.Pattern("","")
-  list := trib.List{}
+  var list trib.List
   //copy all the lists
   err := source.store.ListKeys(p, &list)
   if err!=nil{return err}
     
   for key := range list.L{
 
-    if key == LogKey || key == ResLogKey || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
+    if binInRange(lb,ub,key) == false || key == LogKey || key == ResLogKey || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
     	 continue
     }else{
         //copy over
@@ -362,12 +362,12 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bo
   }
 
   //copy all the kv pair
-  list = trib.List{}
-  err := source.store.Keys(p,&list)
+  var list trib.List
+  err = source.store.Keys(p,&list)
   if err!=nil{return err}
   for key := range list.L{
     //copy over the kv
-    if key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
+    if binInRange(lb,ub,key) == false || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
     	continue
     }
     value := source.store.Get(key)
@@ -376,7 +376,6 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bo
     if err!=nil{return err}
   }
 	if done != nil { go func(ch chan<- bool ) { ch <- true } (done) }
-
 	return nil
 }
 
@@ -417,8 +416,6 @@ func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) erro
     return nil
 }
 
-
-
 func (self *localKeeper) keeperServer() error {
     s := rpc.NewServer()
     s.RegisterName("LocalKeeper", self)
@@ -430,7 +427,6 @@ func (self *localKeeper) keeperServer() error {
     return http.Serve(listener, s)
 
 }
-
 
 func ServeKeeper(kc *trib.KeeperConfig) error {
 
@@ -445,12 +441,11 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		if(i == kc.This){
 			this_keeper = &keeper_structs_list[i]
             this_index = i
-
 		}
   }
   sort.Sort(keeperByHash(keeper_structs_list))
   log.Println("keeper structs list --->", keeper_structs_list)
-	log.Println("current keeper --->", this_keeper)
+  log.Println("current keeper --->", this_keeper)
 
   //create backend structs list
   backend_structs_list := make([]backendKeeper, 0, len(kc.Backs))
