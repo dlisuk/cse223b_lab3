@@ -63,6 +63,7 @@ type localKeeper struct{
 	remoteKeepers  []remoteKeeper
 	backends       []backendKeeper
 	errChan        chan error
+	masterClock    chan bool
 	replicators    map[int]int
 	replicatorLock sync.Mutex
 }
@@ -292,6 +293,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	sort.Sort(rkByHash(backend_structs_list))
 	log.Println("backend structs list --->", backend_structs_list)
 	errChan := make(chan error)
+	masterClock := make(chan bool)
 
 	keeper := &localKeeper{
 		this_keeper.Hash,
@@ -299,6 +301,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		keeper_structs_list,
 		backend_structs_list,
 		errChan,
+		masterClock,
 		make(map[int]int),
 		sync.Mutex{} }
 
@@ -309,13 +312,12 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   log.Println("start running replication manager")
 	go keeper.replicationManager()
 
-  masterClock := make(chan bool)
 
   log.Println("start clock manager")
-  go keeper.clockManager(masterClock)
+  go keeper.clockManager(keeper.masterClock)
 
   log.Println("start master clock daemon")
-  go keeper.syncClock(masterClock)
+  go keeper.syncClock(keeper.masterClock)
 
 
   if kc.Ready != nil { go func(ch chan<- bool) { ch <- true } (kc.Ready) }
