@@ -29,6 +29,7 @@ func (self *loggingStorage) issue(cmd string, kv *trib.KeyValue, finalSucc *bool
 	if !succ      { return errors.New("Failed to append to log") }
 
 	var res trib.List
+	succ = false
 	for succ == false {
 		err := self.store.ListGet(LogKey,&res)
 		if err != nil { return err }
