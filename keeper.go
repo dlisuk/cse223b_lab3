@@ -323,7 +323,7 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bo
 	source := self.backends[s]
 	dest   := self.backends[d]
 
-  p := trib.Pattern()
+  p := trib.Pattern("","")
   list := trib.List{}
   //copy all the lists
   err := source.store.ListKeys(p, &list)
@@ -332,17 +332,23 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bo
   for key := range list.L{
 
     if key == LogKey || key == ResLogKey || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
-      continue}else{
+    	 continue
+    }else{
         //copy over
         list_item := trib.List{}
         err = source.store.ListGet(key, &list_item)
         if err!=nil{return err}
-        dest.store.ListAppend(key,list_item)
-        //remove from the source
-        var n int
-        kv := trib.KV(key, list_item)
-        err = source.store.ListRemove(kv, &n) 
-        if err!=nil{return nil}
+        for _, item := range list_item.L{
+        	kv := trib.KV(key,item)
+        	var succ bool
+        	err = dest.store.ListAppend(kv,&succ)
+        	if err != nil {return err}
+        }
+        // //remove from the source
+        // var n int
+        // kv := trib.KV(key, list_item)
+        // err = source.store.ListRemove(kv, &n) 
+        // if err!=nil{return nil}
       }
   }
 
@@ -352,12 +358,15 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bo
   if err!=nil{return err}
   for key := range list.L{
     //copy over the kv
+    if key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
+    	continue
+    }
     value := source.store.Get(key)
     kv = trib.KV(key,value)
     err = dest.store.Set(kv)
     if err!=nil{return err}
   }
-
+	if done != nil { go func(ch chan<- bool ) { ch <- true } (done) }
 
 	return nil
 }
