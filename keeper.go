@@ -11,7 +11,6 @@ import (
   "math"
 	"errors"
 	"sync"
-	"trib/local"
 )
 
 type remoteKeeper struct{
@@ -67,6 +66,10 @@ type localKeeper struct{
 	replicators    map[int]int
 	replicatorLock sync.Mutex
 }
+type rkByHash []backendKeeper
+func (v rkByHash) Len() int { return len(v) }
+func (v rkByHash) Swap(i, j int) { v[i], v[j] = v[j], v[i] }
+func (v rkByHash) Less(i, j int) bool { return v[i].hash < v[j].hash }
 type backendKeeper struct{
 	addr      string
 	hash      uint64
@@ -286,7 +289,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   for i := range kc.Backs{
     backend_structs_list = append(backend_structs_list, backendKeeper{addr: kc.Backs[i], hash: HashBinKey(kc.Backs[i]), store: NewClient(kc.Backs[i]), replicator:-1, up:false})
   }
-	sort.Sort(byHash(backend_structs_list))
+	sort.Sort(rkByHash(backend_structs_list))
 	log.Println("backend structs list --->", backend_structs_list)
 	errChan := make(chan error)
 
@@ -296,7 +299,8 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		keeper_structs_list,
 		backend_structs_list,
 		errChan,
-		make(map[int]int)}
+		make(map[int]int),
+		sync.Mutex{} }
 
   log.Println("start ping neighbor")
 	go keeper.pingNeighbor()
