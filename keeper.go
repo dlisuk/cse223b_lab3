@@ -8,7 +8,7 @@ import (
   "trib/store"
   "strings"
   "sort"
-  "strconv"
+  // "strconv"
 )
 
 type remoteKeeper struct{
@@ -20,21 +20,27 @@ type remoteKeeper struct{
 
 func (self *remoteKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error {
     c, err := self.getConnection()
-    if c != nil {
-        //set the responseHash
-        responseHash = self.Hash
-        return nil
-    }
     if err != nil && err == rpc.ErrShutdown{
         return err
     }
+    if c != nil {
+        //set the responseHash
+
+         //Local Heartbeat:  func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error{
+        err = c.Call("LocalKeeper.HeartBeat",senderHash,responseHash)      
+        return err
+    }
+
     return nil
 }
 
 func NewRemoteKeeper(addr string, this int) *remoteKeeper{
     //compute hash
-    hash := HashBinKey(addr)
-    return &remoteKeeper{Addr:addr, This:this,Hash:hash, Connection:nil}
+    hash := HashBinKey(Addr)
+    return &remoteKeeper{Addr:addr, 
+                        This:this, 
+                        Hash:hash, 
+                        Connection:nil}
 }
 
 
@@ -56,17 +62,32 @@ func (self *remoteKeeper) getConnection() (*rpc.Client, error) {
 
 //This is the keeper which is running here
 type localKeeper struct{
+    index         int
 	hash          uint64
 	lowerBound    uint64
 	remoteKeepers []keeper
 	backends      []backend
 	errChan       chan error
-	replicators   map[int]int
 }
 
 //This is tthe place where we send heart beats to remote keepers
 func (self *localKeeper) pingNeighbor(){
-
+    
+    neighborIndex := (self.index +1)%len(remoteKeepers) 
+    for{
+        if neighborIndex == self.index{
+            break;
+        }
+        remoteKeeper := remoteKeepers[neighborIndex]
+        var responseHash int
+        err := remoteKeeper.HeartBeat(self.Hash, &responseHash)
+        if err != nil{
+            neighborIndex = (neighborIndex+1)%len(remoteKeepers);
+        }
+        else{
+            break;
+        }
+    }
 }
 
 //This is the function which calls the clock on all the backends if we are the master
@@ -140,37 +161,46 @@ func (self *localKeeper) clockManager(){
 
 //This is the function that handles replication of master/slaves
 func (self *localKeeper) replicationManager(){
+	/*
+			Keeper polling log from backend
+	*/
+	go func() {
 		//This maps indexes of the backends struct list to index
+		primary_back_replica_mapping := make(map[int]int)
+
 		for {
 			time.Sleep(1 * time.Millisecond)
-			for p,r := range self.replicators {
-
+			for k,v := range primary_back_replica_mapping {
+				var rawList trib.List
 				//TODO: instead of creaing a new client we should use the back list we have created earlier,
 				//TODO:  we really don't need the primary_back_replica_mapping map
 				//TODO: HERE IS THE CLIENT IN THE STRUCT: backend_structs_list[0].store.Get
 				//TODO: We should mark the lower bound replica/lower bound master on the backends here
-				primary := self.backends[p]
-				replica := self.backends[r]
+				primary := NewClient(k)
+				replica := NewClient(v)
+				// _,_,_ = primary,replica, rawList
 
-				var rawLog trib.List
-				err := primary.ListGet(LogKey,&rawLog)
-				//TODO:Check if replicator is down
+				err := primary.ListGet(LogKey,&rawList)
 				if err!=nil{
-					//TODO:In this event we need to promote the replicator to be primary
+					//placeholder
 				}
-				for _,cmd := range rawLog.L{
+				for _,cmd := range rawList.L{
+					//RPC call
+					//Set  ListAppend  ListRemove
+					// func ExtractCmd(cmd string) (string, *trib.KeyValue, error){
 					var n int
-					err = execute(replica,cmd)
-					if err != nil {
-						//TODO:In this condition we need to find a new replicator
-					}else{
+					replicaErr := execute(replica,cmd)
+
+					if replicaErr == nil{
 						//execute on the primary
-						err = execute(primary,cmd)
-						if err != nil {
-							//TODO:In this condition we need to promote the replicator to be primary
-						}else{
+						primaryErr := execute(primary,cmd)
+
+
+						if primaryErr != nil{
+							//remove log
 							log_kv := trib.KV(LogKey, cmd)
 							err = primary.ListRemove(log_kv, &n)
+							//client will be unblocked
 							//TODO: Add results log?
 
 							if n!=1{
@@ -186,7 +216,7 @@ func (self *localKeeper) replicationManager(){
 				}//end cmd list loop
 			} //end k,v for loop
 		}// end for loop
-	}
+	}()
 
 }
 
@@ -200,18 +230,50 @@ func (self *localKeeper) backendManager(){
 func (self *localKeeper) HeartBeat(senderHash uint64, responseHash *uint64) error{
 	//TODO: we need to use the senderHash to figure out if we need to change our lower bound.
 	//TODO: we then need to send what our lower bound is.
+    if self.lowerBound == senderHash {
+        //do nothing
+    }
+    else {
+        self.lowerBound = senderHash
+    }
+    responseHash = self.lowerBound
+    return nil
+}
+
+
+// Creates an RPC client that connects to a keeper.
+func NewKeeperConnection(addr string) keeperCommunicate {
+  return &keeper{Addr:addr}
+}
+
+type keeperCommunicate interface{
+
+}
+
+func (self *localKeeper) keeperServer() error {
+    s := rpc.NewServer()
+    s.RegisterName("LocalKeeper", self)
+    listener, err := net.Listen("tcp",self.Addr)
+
+    if err != nil{
+        return err
+    }
+    return http.Serve(listener, s)
 }
 
 
 func ServeKeeper(kc *trib.KeeperConfig) error {
 
+
   //create keeper structs list
   keeper_structs_list := make([]keeper, 0, len(kc.Addrs))
-	var this_keeper *keeper
+  var this_keeper *keeper
+  var this_index int
   for i := range kc.Addrs{
     keeper_structs_list = append(keeper_structs_list, keeper{Addr: kc.Addrs[i], This: i, Hash: HashBinKey(kc.Backs[i]), Connection: nil })
 		if(i == kc.This){
 			this_keeper = keeper_structs_list[i]
+            this_index = i
 		}
   }
   sort.Sort(keeperByHash(keeper_structs_list))
@@ -228,12 +290,12 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	errChan := make(chan error)
 
 	keeper := &localKeeper{
+        this_index
 		this_keeper.Hash,
 		this_keeper.Hash,
 		keeper_structs_list,
 		backend_structs_list,
-		errChan,
-		make(map[int]int)}
+		errChan}
 
 	go keeper.pingNeighbor()
 	go keeper.backendManager()
@@ -247,17 +309,15 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
   return err
 }
 
-func execute(backend trib.Storage, cmd string) (string,error){
+func execute(backend trib.Storage, cmd string) error{
   op, kv, err := ExtractCmd(cmd)
 	if err != nil { return err }
   var succ bool
   var err error
   var n int
-	var response string
   switch op{
     case "Set":
         err = backend.Set(kv,&succ)
-				response = strconv.succ
     case "ListAppend":
         err = backend.ListAppend(kv, &succ)
     case "ListRemove":
