@@ -562,6 +562,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 
 	upBacks := 0
 	for upBacks < 3 {
+		time.Sleep(250)
 		log.Println("trying upBacks" + strconv.Itoa(upBacks))
 		for i,b := range keeper.backends {
 			var res string
@@ -601,6 +602,8 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		keeper.backends[b].mlb        = keeper.backends[pred].hash
 		keeper.backends[b].replicates = succ
 		keeper.backends[b].rlb        = keeper.backends[succ].hash
+		keeper.backends[b].store.Set(trib.KV(MasterKeyLB,strconv.FormatUint(keeper.backends[b].mlb,10)),nil)
+		keeper.backends[b].store.Set(trib.KV(ReplicKeyLB,strconv.FormatUint(keeper.backends[b].rlb,10)),nil)
 	}
 
 
