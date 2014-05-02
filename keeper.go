@@ -205,17 +205,23 @@ func (self *localKeeper) replicationManager(){
 	//This maps indexes of the backends struct list to index
 	for {
 		time.Sleep(250 * time.Millisecond)
+		
 		self.replicatorLock.Lock()
 		PR_Loop: for p,p_back := range self.backends {
 			if p_back.up == false || !self.inRange(p_back.hash){
 				continue
 			}
+			// log.Println("replicationManager at work")
 			primary := p_back.store
 			r       := p_back.replicator
 			replica := self.backends[r].store
 
 			var rawLog trib.List
 			err := primary.ListGet(LogKey,&rawLog)
+			// log.Println("The log is : ", len(rawLog.L))
+			for i,l := range rawLog.L{
+				log.Println("log ",i," = ",l)
+			}
 			if err!=nil{
 				self.serverCrash(p)
 				break PR_Loop
@@ -605,6 +611,8 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 		keeper.backends[b].store.Set(trib.KV(ReplicKeyLB,strconv.FormatUint(keeper.backends[b].rlb,10)),nil)
 	}
 
+	//start the keeper server
+	go keeper.keeperServer()
 
 	if(len(keeper.remoteKeepers) > 1) {
 		log.Println("start ping neighbor")
