@@ -220,7 +220,7 @@ func (self *localKeeper) replicationManager(){
 			err := primary.ListGet(LogKey,&rawLog)
 			// log.Println("The log is : ", len(rawLog.L))
 			for i,l := range rawLog.L{
-				// log.Println("log ",i," = ",l)
+				log.Println("log ",i," = ",l)
 			}
 			if err!=nil{
 				self.serverCrash(p)
