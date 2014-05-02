@@ -309,14 +309,45 @@ func (self *localKeeper) serverCrash(index int){
 func (self *localKeeper) serverJoin(index int){
 	//Caller must have locked the replicator lock
 	//TODO: Here we need to figure out what to do when a server comes up, make sure it's replicator can take over/such
-	self.backends[index].up = true
+	joined_server = self.backends[index]
+  joined_server.up = true
 
-  replicator := self.backends[back.replicator]
-  replicates := self.backends[back.replicates]
 
-  self.backends[index].mlb = self.backends[replicates].hash
-  self.backends[index].rlb = self.backends[replicator].rlb
-  self.backends[replicator].rlb = self.backends[index].mlb
+  // for i := index - 1; i >= 0; i-- {
+  //   replicates := self.backends[i]
+  //   responseHash := new(uint64)
+  //   if(joined_server.HeartBeat(joined_server.hash, replicates.hash)){
+
+  //   }
+  //   replicator := self.backends[joined_server.replicator]
+  // }
+
+
+  // joined_server.mlb = self.backends[replicates].hash
+  // joined_server.rlb = self.backends[replicator].rlb
+  // self.backends[replicator].rlb = joined_server.mlb
+
+  allDoneCh := make(<-chan bool)
+
+  //First we want to initiate the copies since they are long running and can be backgrounded
+  //crashed server master data -> new slave
+  copy1ch := make(<-chan bool)
+  go self.copy(replicaInd,joinServerInd, back.mlb, back.hash, copy1ch)
+  go func(){
+    var succ bool
+    //the new master can immediatly be the master, accept issueing but not committing commands
+    _ := newMaster.store.Set(trib.KV(MasterKeyLB, strconv.Itoa(back.mlb)), &succ)
+    newMaster.mlb = back.mlb
+
+    _ := <- copy1ch
+    //The new slave is now officially a slave
+    _ := newSlave.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.mlb)), &succ)
+    newSlave.rlb = back.mlb
+    back.mlb = -1
+    allDoneCh <- true
+  }()
+
+
 }
 
 func (self *localKeeper) binInRange(lb uint64, ub uint64, key string) bool{
