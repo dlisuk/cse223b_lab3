@@ -33,7 +33,7 @@ func (self *remoteKeeper) HeartBeat(senderHash uint64, responseHash *uint64) err
 
 func NewRemoteKeeper(addr string, this int) *remoteKeeper{
     //compute hash
-    hash := HashBinKey(Addr)
+    hash := HashBinKey(addr)
     return &remoteKeeper{Addr:addr, This:this,Hash:hash, Connection:nil}
 }
 
