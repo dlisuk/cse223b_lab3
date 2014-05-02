@@ -63,7 +63,7 @@ type localKeeper struct{
 	remoteKeepers  []remoteKeeper
 	backends       []backendKeeper
 	errChan        chan error
-	masterClock    chan bool
+	masterFlag     bool
 	replicators    map[int]int
 	replicatorLock sync.Mutex
 }
@@ -92,7 +92,7 @@ func (self *localKeeper) pingNeighbor(){
 
 //This is the function which calls the clock on all the backends if we are the master
 //This is the function which calls the clock on all the backends if we are the master
-func (self *localKeeper) clockManager(master chan bool){
+func (self *localKeeper) clockManager(){
   ticker  := time.NewTicker(time.Second)
   /*
       clock synchronization with all backends
@@ -119,12 +119,12 @@ func (self *localKeeper) clockManager(master chan bool){
       }
     }
     if minimumHash == self.hash {
-      master <- true
+      self.masterFlag = true
     }
   }(ticker.C)
 }
 
-func (self *localKeeper) syncClock(master chan bool){
+func (self *localKeeper) syncClock(){
     //if this keeper is the master
   var highest uint64
   ticker  := time.NewTicker(time.Second)
@@ -133,9 +133,7 @@ func (self *localKeeper) syncClock(master chan bool){
   go func(tick <-chan time.Time){
     for {
       _ = <- tick
-      // some <- master
-      master_flag := <- master
-      switch master_flag{
+      switch self.masterFlag{
         case true:
           go func() {
             log.Println("clock is being synced")
@@ -293,7 +291,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 	sort.Sort(rkByHash(backend_structs_list))
 	log.Println("backend structs list --->", backend_structs_list)
 	errChan := make(chan error)
-	masterClock := make(chan bool)
+	masterClock := false
 
 	keeper := &localKeeper{
 		this_keeper.Hash,
@@ -314,10 +312,10 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 
 
   log.Println("start clock manager")
-  go keeper.clockManager(keeper.masterClock)
+  go keeper.clockManager()
 
   log.Println("start master clock daemon")
-  go keeper.syncClock(keeper.masterClock)
+  go keeper.syncClock()
 
 
   if kc.Ready != nil { go func(ch chan<- bool) { ch <- true } (kc.Ready) }
