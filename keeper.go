@@ -322,6 +322,43 @@ func (self *localKeeper) serverJoin(index int){
 func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bool) error{
 	source := self.backends[s]
 	dest   := self.backends[d]
+
+  p := trib.Pattern()
+  list := trib.List{}
+  //copy all the lists
+  err := source.store.ListKeys(p, &list)
+  if err!=nil{return err}
+    
+  for key := range list.L{
+
+    if key == LogKey || key == ResLogKey || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
+      continue}else{
+        //copy over
+        list_item := trib.List{}
+        err = source.store.ListGet(key, &list_item)
+        if err!=nil{return err}
+        dest.store.ListAppend(key,list_item)
+        //remove from the source
+        var n int
+        kv := trib.KV(key, list_item)
+        err = source.store.ListRemove(kv, &n) 
+        if err!=nil{return nil}
+      }
+  }
+
+  //copy all the kv pair
+  list = trib.List{}
+  err := source.store.Keys(p,&list)
+  if err!=nil{return err}
+  for key := range list.L{
+    //copy over the kv
+    value := source.store.Get(key)
+    kv = trib.KV(key,value)
+    err = dest.store.Set(kv)
+    if err!=nil{return err}
+  }
+
+
 	return nil
 }
 
