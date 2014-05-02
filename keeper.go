@@ -97,7 +97,7 @@ func (self *localKeeper) inRange(x uint64) bool{
 //This is tthe place where we send heart beats to remote keepers
 func (self *localKeeper) pingNeighbor(){
     
-    neighborIndex := (self.index +1)%len(remoteKeepers) 
+    neighborIndex := (self.index +1)%len(remoteKeepers)
     for{
         if neighborIndex == self.index{
             break;
@@ -262,6 +262,12 @@ func (self *localKeeper) serverJoin(index int){
 	//TODO: Here we need to figure out what to do when a server comes up, make sure it's replicator can take over/such
 	self.backends[index].up = true
 }
+func (self *localKeeper) copy(s int, d int,lb uint64, rb uint64) error{
+	source := self.backends[s]
+	dest   := self.backends[d]
+	return nil
+}
+
 
 //This is the function that figures out when backends come up
 func (self *localKeeper) backendManager(){
