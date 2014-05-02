@@ -265,38 +265,38 @@ func (self *localKeeper) serverCrash(index int){
 	newSlaveInd  := newMaster.replicator
 	newSlave     := self.backends[newSlaveInd]
 	//We don't care if this backup is  down, someone else must have dealt with it
-	allDoneCh := make(<-chan bool)
+	allDoneCh := make(chan bool)
 
 	var succ bool
 	//Step 0
 	//the new master can immediatly be the master, accept issueing but not committing commands
-	_ = newMaster.store.Set(trib.KV(MasterKeyLB, strconv.Itoa(back.mlb)), &succ)
+	_ = newMaster.store.Set(trib.KV(MasterKeyLB, strconv.FormatUint(back.mlb,10)), &succ)
 
 	//First we want to initiate the copies since they are long running and can be backgrounded
 	//crashed server master data -> new slave
-	copy1ch := make(<-chan bool)
+	copy1ch := make(chan bool)
 	go self.copy(newMasterInd,newSlaveInd, back.mlb, back.hash, copy1ch)
 	go func(){
 		var succ bool
 		_ = <- copy1ch
 		//The new slave is now officially a slave
-		_ = newSlave.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.mlb)), &succ)
+		_ = newSlave.store.Set(trib.KV(ReplicKeyLB, strconv.FormatUint(back.mlb,10)), &succ)
 		allDoneCh <- true
 	}()
 
 	//crashed server slave data -> new master
-	copy2ch := make(<-chan bool)
+	copy2ch := make(chan bool)
 	go self.copy(back.replicates, newMasterInd, back.rlb, back.mlb, copy2ch)
 	go func(){
 		var succ bool
 		_ = <- copy2ch
 		//The new master is now officially a slave to the old master's master
-		_ = newMaster.store.Set(trib.KV(ReplicKeyLB, strconv.Itoa(back.rlb)), &succ)
+		_ = newMaster.store.Set(trib.KV(ReplicKeyLB, strconv.FormatUint(back.rlb,10)), &succ)
 		allDoneCh <- true
 	}()
 
-	_ <- allDoneCh
-	_ <- allDoneCh
+	_ = <- allDoneCh
+	_ = <- allDoneCh
 }
 
 func (self *localKeeper) serverJoin(index int){
@@ -342,29 +342,29 @@ func (self *localKeeper) serverJoin(index int){
 	succ 					:= self.backends[succInd]
 
 
-  allDoneCh := make(<-chan bool)
+  allDoneCh := make(chan bool)
 
 	var passed bool
 	//Step 0
-	_ = succ.store.Set(trib.KV(ReplicKeyLB,strconv.Itoa(succ.mlb)), &passed)
+	_ = succ.store.Set(trib.KV(ReplicKeyLB,strconv.FormatUint(succ.mlb, 10)), &passed)
 	//Step 1
-	_ = succ.store.Set(trib.KV(MasterKeyLB,strconv.Itoa(joined_server.hash)), &passed)
+	_ = succ.store.Set(trib.KV(MasterKeyLB,strconv.FormatUint(joined_server.hash, 10)), &passed)
 	//Step 2
 	//TODO: FLUSH LOG OF SUCC , this has to block
 
 	//Step 3
-	_ = joined_server.store.Set(trib.KV(MasterKeyLB,strconv.Itoa(succ.mlb)), &passed)
+	_ = joined_server.store.Set(trib.KV(MasterKeyLB,strconv.FormatUint(succ.mlb,10)), &passed)
 
 
   //First we want to initiate the copies since they are long running and can be backgrounded
   //crashed server master data -> new slave
-  copy1ch := make(<-chan bool)
+  copy1ch := make(chan bool)
 	//Step 4
   go self.copy(succInd,index, pred.mlb,  joined_server.hash, copy1ch)
   go func(){
     _ = <- copy1ch
 		//Step 5
-		_ = joined_server.store.Set(trib.KV(ReplicKeyLB,strconv.Itoa(succ.rlb)), &passed)
+		_ = joined_server.store.Set(trib.KV(ReplicKeyLB,strconv.FormatUint(succ.rlb,10)), &passed)
     allDoneCh <- true
   }()
 
@@ -381,19 +381,18 @@ func (self *localKeeper) binInRange(lb uint64, ub uint64, key string) bool{
 	return lbPass && ubPass || (ub < lb && (lbPass || ubPass) )
 }
 
-func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bool) error{
+func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done chan bool) error{
 	source := self.backends[s]
 	dest   := self.backends[d]
 
-  p := trib.Pattern("","")
+  p := &trib.Pattern{"",""}
   var list trib.List
   //copy all the lists
   err := source.store.ListKeys(p, &list)
   if err!=nil{return err}
     
-  for key := range list.L{
-
-    if binInRange(lb,ub,key) == false || key == LogKey || key == ResLogKey || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
+  for _, key := range list.L{
+    if !self.binInRange(lb,ub,key) || key == LogKey || key == ResLogKey || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
     	 continue
     }else{
         //copy over
@@ -418,17 +417,18 @@ func (self *localKeeper) copy(s int, d int,lb uint64, ub uint64, done <- chan bo
   // var list trib.List
   err = source.store.Keys(p,&list)
   if err!=nil{return err}
-  for key := range list.L{
+  for _,key := range list.L{
     //copy over the kv
-    if binInRange(lb,ub,key) == false || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
+    if self.binInRange(lb,ub,key) == false || key == CommittedKey || key == MasterKeyLB || key == ReplicKeyLB{
     	continue
     }
-    value := source.store.Get(key)
-    kv = trib.KV(key,value)
-    err = dest.store.Set(kv)
-    if err!=nil{return err}
+		var value string
+    err = source.store.Get(key, &value)
+		if err!=nil{return err}
+    kv := trib.KV(key,value)
+    err = dest.store.Set(kv, nil)
   }
-	if done != nil { go func(ch chan<- bool ) { ch <- true } (done) }
+	if done != nil { go func(ch chan bool ) { ch <- true } (done) }
 	return nil
 }
 
@@ -442,15 +442,15 @@ func (self *localKeeper) backendManager(){
 			err1 := back.store.Get(MasterKeyLB, &mlbS)
 			err2 := back.store.Get(ReplicKeyLB, &rlbS)
 
-			var mlb, rlb int
+			var mlb, rlb uint64
 			var up bool
 			if err1 == nil && err2 == nil{
-				mlb = strconv.Atoi(mlbS)
-				rlb = strconv.Atoi(rlbS)
+				mlb, _ = strconv.ParseUint(mlbS,10,64)
+				rlb, _ = strconv.ParseUint(rlbS,10,64)
 				up = true
 			}else{
-				mlb = -1
-				rlb = -1
+				mlb = 0
+				rlb = 0
 				up  = false
 			}
 
@@ -459,8 +459,8 @@ func (self *localKeeper) backendManager(){
 				if back.up == false && up == true && self.inRange(back.hash){
 					//If we are a manager of this we need to make it join, this will change the server side mlb/rlb
 					self.serverJoin(i)
-					_ := back.store.Get(MasterKeyLB, &mlbS)
-					_ := back.store.Get(ReplicKeyLB, &rlbS)
+					_ = back.store.Get(MasterKeyLB, &mlbS)
+					_ = back.store.Get(ReplicKeyLB, &rlbS)
 				}
 				self.backends[i].up  = up
 				self.backends[i].mlb = mlb
@@ -565,7 +565,7 @@ func ServeKeeper(kc *trib.KeeperConfig) error {
 func execute(backend trib.Storage, cmd string) (string,error){
   op, kv, err := ExtractCmd(cmd)
 
-	if err != nil { return err }
+	if err != nil { return "",err }
 	response := ""
     switch op{
     case "Set":
@@ -583,7 +583,7 @@ func execute(backend trib.Storage, cmd string) (string,error){
 		default:
 			err = errors.New("Undefined operation: " + op)
   }
-	return err
+	return response,err
 }
 
 
