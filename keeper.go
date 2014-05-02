@@ -9,6 +9,7 @@ import (
   "sort"
   "strconv"
 	"errors"
+	"sync"
 )
 
 type remoteKeeper struct{
@@ -56,12 +57,13 @@ func (self *remoteKeeper) getConnection() (*rpc.Client, error) {
 
 //This is the keeper which is running here
 type localKeeper struct{
-	hash          uint64
-	lowerBound    uint64
-	remoteKeepers []remoteKeeper
-	backends      []backend
-	errChan       chan error
-	replicators   map[int]int
+	hash           uint64
+	lowerBound     uint64
+	remoteKeepers  []remoteKeeper
+	backends       []backend
+	errChan        chan error
+	replicators    map[int]int
+	replicatorLock sync.Mutex
 }
 
 //This is tthe place where we send heart beats to remote keepers
@@ -194,7 +196,6 @@ func (self *localKeeper) replicationManager(){
 
 func (self *localKeeper) serverCrash(index int){
 	//TODO: Here we need to figure out what to do when a server goes down, make sure it's replicator can take over/such
-
 }
 
 //This is the function that figures out when backends come up/go down and handles copying of all data from one backend to annother
